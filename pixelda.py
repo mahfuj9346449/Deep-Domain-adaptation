@@ -403,9 +403,24 @@ class PixelDA():
 		print("Saving transformed images to file {}".format(save2file))
 		np.save(save2file, np.stack(collections))
 		print("+ All done.")
-		
+	
+	def deploy_classification(self, batch_size=32):
+		print("Predicting ... ")
+		pred_B = self.clf.predict(self.data_loader.mnistm_X, batch_size=batch_size)
+		print("+ Done.")
+		N_samples = len(pred_B)
+		precision = (np.argmax(pred_B, axis=1) == self.data_loader.mnistm_y)
+		Moy = np.mean(precision)
+		Std = np.std(precision)
 
-
+		lower_bound = Moy - 2.576*Std/np.sqrt(N_samples) 
+		upper_bound = Moy + 2.576*Std/np.sqrt(N_samples)
+		print("="*50)
+		print("Unsupervised MNIST-M classification accuracy : {}".format(Moy))
+		print("Confidence interval (99%) [{}, {}]".format(lower_bound, upper_bound))
+		print("Length of confidence interval 99%: {}".format(upper_bound-lower_bound))
+		print("="*50)
+		print("+ All done.")
 
 if __name__ == '__main__':
 	gan = PixelDA()
@@ -414,5 +429,5 @@ if __name__ == '__main__':
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=15000, batch_size=32, sample_interval=100, save_sample2dir="./samples/exp2", save_weights_path='./Weights/exp2.h5')
 	# gan.deploy_transform(stop_after=200)
-	gan.deploy_debug(save2file="./domain_adapted/exp2/debug.npy", sample_size=9, seed = 0)
-	
+	# gan.deploy_debug(save2file="./domain_adapted/exp2/debug.npy", sample_size=9, seed = 0)
+	gan.deploy_classification()
