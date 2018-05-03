@@ -13,7 +13,7 @@ class DataLoader():
 	"""Loads images from MNIST (domain A) and MNIST-M (domain B)"""
 	def __init__(self, img_res=(128, 128)):
 		self.img_res = img_res
-
+		self.mnistm_url = 'https://github.com/VanushVaswani/keras_mnistm/releases/download/1.0/keras_mnistm.pkl.gz'
 		self.setup_mnist(img_res)
 		self.setup_mnistm(img_res)
 
@@ -52,16 +52,16 @@ class DataLoader():
 		if not os.path.exists(os.path.join(ROOT_path, '.keras/datasets/mnistm_x.npy')):
 
 			# Download the MNIST-M pkl file
-			# filepath = 'datasets/keras_mnistm.pkl.gz'
-			# if not os.path.exists(filepath.replace('.gz', '')):
-			# 	print('+ Downloading ' + self.mnistm_url)
-			# 	data = urllib.request.urlopen(self.mnistm_url)
-			# 	with open(filepath, 'wb') as f:
-			# 		f.write(data.read())
-			# 	with open(filepath.replace('.gz', ''), 'wb') as out_f, \
-			# 			gzip.GzipFile(filepath) as zip_f:
-			# 		out_f.write(zip_f.read())
-			# 	os.unlink(filepath)
+			filepath = os.path.join(ROOT_path, '.keras/datasets/keras_mnistm.pkl.gz')
+			if not os.path.exists(filepath.replace('.gz', '')):
+				print('+ Downloading ' + self.mnistm_url)
+				data = urllib.request.urlopen(self.mnistm_url)
+				with open(filepath, 'wb') as f:
+					f.write(data.read())
+				with open(filepath.replace('.gz', ''), 'wb') as out_f, \
+						gzip.GzipFile(filepath) as zip_f:
+					out_f.write(zip_f.read())
+				os.unlink(filepath)
 
 			# load MNIST-M images from pkl file
 			with open(os.path.join(ROOT_path, '.keras/datasets/keras_mnistm.pkl'), "rb") as f:

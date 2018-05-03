@@ -117,7 +117,7 @@ class PixelDA():
 
 		# optimizer = Adam(0.0002, 0.5)
 		# optimizer = SGD(lr=0.0001)
-		optimizer = RMSprop(lr=0.0001)
+		optimizer = RMSprop(lr=1e-5)
 
 		# Number of filters in first layer of discriminator and classifier
 		self.df = 64
@@ -289,11 +289,13 @@ class PixelDA():
 			# ---------------------
 			#  Train Discriminator
 			# ---------------------
+			# n_sample = half_batch # imgs_A.shape[0]
+			half_batch = batch_size # TODO
 
 			imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=half_batch)
 			imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=half_batch)
 			
-			# n_sample = half_batch # imgs_A.shape[0]
+			
 			noise_prior = np.random.normal(0,1, (half_batch, self.noise_size[0])) # TODO
 			
 			# Translate images from domain A to domain B
@@ -487,11 +489,11 @@ class PixelDA():
 
 if __name__ == '__main__':
 	gan = PixelDA()
-	gan.summary()
-	# gan.load_pretrained_weights(weights_path='../Weights/exp6_bis.h5')
+	# gan.summary()
+	gan.load_pretrained_weights(weights_path='../Weights/exp9.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
-	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp6", save_weights_path='../Weights/exp6.h5')
+	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
 	# gan.deploy_transform(stop_after=200)
-	# gan.deploy_transform(stop_after=200, save2file="../domain_adapted/Exp2/generated.npy")
-	# gan.deploy_debug(save2file="../domain_adapted/exp2/debug.npy", sample_size=9, seed = 0)
-	# gan.deploy_classification()
+	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
+	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
+	gan.deploy_classification()
