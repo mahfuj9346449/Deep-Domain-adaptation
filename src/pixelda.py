@@ -1,24 +1,61 @@
 from __future__ import print_function, division
 import scipy
 import os
-import keras
-import tensorflow as tf
-import keras.backend.tensorflow_backend as KTF
+# import keras
+# import tensorflow as tf
+# import keras.backend.tensorflow_backend as KTF
+import argparse
 
-def get_session(gpu_fraction=0.5):
-	'''Assume that you have 6GB of GPU memory and want to allocate ~2GB'''
+parser = argparse.ArgumentParser()
+parser.add_argument("--gpu", help="Choose the mode of GPU.", type=str, default="simple", choices=["simple", "multi"])
+parser.add_argument("-v", help="verbose.", default=0, type=int, choices=[0, 1])
+args = parser.parse_args()
 
-	num_threads = os.environ.get('OMP_NUM_THREADS')
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
-
-	if num_threads:
-		return tf.Session(config=tf.ConfigProto(
-			gpu_options=gpu_options, intra_op_parallelism_threads=num_threads))
+if args.gpu == "simple":
+	# simple GPU
+	
+	import socket
+	machine_name = socket.gethostname()
+	print("="*50)
+	print("Machine name: {}".format(machine_name))
+	print("="*50)
+	if machine_name == "lulin-QX-350-Series":
+		os.environ["CUDA_VISIBLE_DEVICES"]="0"
 	else:
-		return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+		os.environ["CUDA_VISIBLE_DEVICES"]="1"
+		import matplotlib as mpl 
+		mpl.use("Agg")
+		# Qt_XKB_CONFIG_ROOT (add path ?)
 
+	import keras
+	import tensorflow as tf
+	import keras.backend.tensorflow_backend as KTF
 
-KTF.set_session(get_session(gpu_fraction=0.45)) # NEW 28-9-2017
+	def get_session(gpu_fraction=0.5):
+		'''Assume that you have 6GB of GPU memory and want to allocate ~2GB'''
+
+		num_threads = os.environ.get('OMP_NUM_THREADS')
+		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
+
+		if num_threads:
+			return tf.Session(config=tf.ConfigProto(
+				gpu_options=gpu_options, intra_op_parallelism_threads=num_threads))
+		else:
+			return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+
+	if machine_name == "lulin-QX-350-Series":
+		print("Using local machine..")
+		KTF.set_session(get_session(gpu_fraction=0.4)) # NEW 28-9-2017
+	else:
+		KTF.set_session(get_session(gpu_fraction=0.95)) # NEW 28-9-2017
+		
+
+elif args.gpu == "multi":
+	import keras
+	from keras.utils import multi_gpu_model
+else:
+	print(args.gpu)
+
 
 
 from keras.datasets import mnist
@@ -333,7 +370,7 @@ class PixelDA():
 				elif test_mean_acc > second_best_cls_acc:
 					second_best_cls_acc = test_mean_acc
 
-					self.combined.save_weights(save_weights_path.split(".")[0]+"_bis.h5")
+					self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
 					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
 
 				else:
@@ -450,11 +487,11 @@ class PixelDA():
 
 if __name__ == '__main__':
 	gan = PixelDA()
-	# gan.summary()
-	gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
+	gan.summary()
+	# gan.load_pretrained_weights(weights_path='../Weights/exp6_bis.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp6", save_weights_path='../Weights/exp6.h5')
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=200, save2file="../domain_adapted/Exp2/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/exp2/debug.npy", sample_size=9, seed = 0)
-	gan.deploy_classification()
+	# gan.deploy_classification()
