@@ -11,10 +11,10 @@ Results of unsupervised domain adaptation using PixelDA (not yet optimal).
 |:-------------------------:|:-------------------:|
 |    Source only (MNIST)    |        62.31%       |
 | PixelDA (eriklindernoren) |         95%         |
-|       PixelDA (ours)      |      **96.07%**     |
+|       PixelDA (ours)      |      **97.07%**     |
 
 
-In paper, they claim accuracy 98.2% for **MNIST to MNIST-M**. 
+In paper, they claim accuracy 98.2% for the classification on MNIST-M (domain adaptation **from MNIST to MNIST-M**). 
 
 
 Project ongoing...
