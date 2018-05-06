@@ -58,13 +58,15 @@ else:
 
 
 
+
+
 from keras.datasets import mnist
 from keras_contrib.layers.normalization import InstanceNormalization
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Sequential, Model
+from keras.models import Model #load_model
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.utils import to_categorical
 import datetime
@@ -99,14 +101,7 @@ class PixelDA():
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (10,)
-
-		# Configure MNIST and MNIST-M data loader
-		self.data_loader = DataLoader(img_res=(self.img_rows, self.img_cols))
-
-		# Loss weights
-		lambda_adv = 10
-		lambda_clf = 1
+		self.noise_size = (100,)
 
 		# Calculate output shape of D (PatchGAN)
 		patch = int(self.img_rows / 2**4)
@@ -115,6 +110,10 @@ class PixelDA():
 		# Number of residual blocks in the generator
 		self.residual_blocks = 6
 
+	def build_all_model(self):
+		# Loss weights
+		lambda_adv = 10
+		lambda_clf = 1
 		# optimizer = Adam(0.0002, 0.5)
 		# optimizer = SGD(lr=0.0001)
 		optimizer = RMSprop(lr=1e-5)
@@ -125,19 +124,20 @@ class PixelDA():
 
 		# Build and compile the discriminators
 		self.discriminator = self.build_discriminator()
+		self.discriminator.name = "Discriminator"
 		self.discriminator.compile(loss='mse',
 			optimizer=optimizer,
 			metrics=['accuracy'])
 
 		# Build the generator
 		self.generator = self.build_generator()
-
+		self.generator.name = "Generator"
 		# Build the task (classification) network
 		self.clf = self.build_classifier()
-
+		self.clf.name = "Classifier" 
 		# Input images from both domains
-		img_A = Input(shape=self.img_shape)
-		img_B = Input(shape=self.img_shape)
+		img_A = Input(shape=self.img_shape, name='source_image')
+		
 		# Input noise
 		noise = Input(shape=self.noise_size, name='noise_input')
 
@@ -159,16 +159,20 @@ class PixelDA():
 									optimizer=optimizer,
 									metrics=['accuracy'])
 
+	def load_dataset(self):
+		# Configure MNIST and MNIST-M data loader
+		self.data_loader = DataLoader(img_res=(self.img_rows, self.img_cols))
+
 	def build_generator(self):
 		"""Resnet Generator"""
 
 		def residual_block(layer_input):
 			"""Residual block described in paper"""
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(layer_input)
-			d = BatchNormalization(momentum=0.8)(d)
+			d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
 			d = Activation('relu')(d)
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(d)
-			d = BatchNormalization(momentum=0.8)(d)
+			d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
 			d = Add()([d, layer_input])
 			return d
 
@@ -227,7 +231,7 @@ class PixelDA():
 				d = InstanceNormalization()(d)
 			return d
 
-		img = Input(shape=self.img_shape)
+		img = Input(shape=self.img_shape, name='image_input')
 
 		c1 = clf_layer(img, self.cf, normalization=False)
 		c2 = clf_layer(c1, self.cf*2)
@@ -258,13 +262,15 @@ class PixelDA():
 		self.combined.summary()
 
 
-	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5'):
+	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 
-		# half_batch = batch_size #int(batch_size / 2) ### TODO
-		half_batch = int(batch_size / 2)
+		half_batch = batch_size #int(batch_size / 2) ### TODO
+		# half_batch = int(batch_size / 2)
+		
+
 
 		# Classification accuracy on 100 last batches of domain B
 		test_accs = []
@@ -290,24 +296,30 @@ class PixelDA():
 			#  Train Discriminator
 			# ---------------------
 			# n_sample = half_batch # imgs_A.shape[0]
-			half_batch = batch_size # TODO
+			
+			
 
 			imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=half_batch)
 			imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=half_batch)
 			
 			
 			noise_prior = np.random.normal(0,1, (half_batch, self.noise_size[0])) # TODO
+			# noise_prior = np.random.rand(half_batch, self.noise_size[0]) # TODO 6/5/2018
 			
 			# Translate images from domain A to domain B
 			fake_B = self.generator.predict([imgs_A, noise_prior])
 			
 			valid = np.ones((half_batch,) + self.disc_patch)
 			fake = np.zeros((half_batch,) + self.disc_patch)
+			# fake = -valid # TODO 6/5/2018 NEW
+			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
+			D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
 
 			# Train the discriminators (original images = real / translated = Fake)
-			d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
-			d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
-			d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+			# d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
+			# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
+			# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+			d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
 
 
 			# --------------------------------
@@ -326,6 +338,7 @@ class PixelDA():
 
 			#
 			noise_prior = np.random.normal(0,1, (batch_size, self.noise_size[0])) # TODO
+			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) # TODO 6/5/2018
 
 			# Train the generator and classifier
 			g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, labels_A])
@@ -367,12 +380,19 @@ class PixelDA():
 				if test_mean_acc > best_test_cls_acc:
 					second_best_cls_acc = best_test_cls_acc
 					best_test_cls_acc = test_mean_acc
-					self.combined.save_weights(save_weights_path)
+					
+					if save_model:
+						self.combined.save(save_weights_path)
+					else:
+						self.combined.save_weights(save_weights_path)	
 					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (latest)".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
 				elif test_mean_acc > second_best_cls_acc:
 					second_best_cls_acc = test_mean_acc
-
-					self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
+					
+					if save_model:
+						self.combined.save(save_weights_path)
+					else:
+						self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
 					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
 
 				else:
@@ -395,7 +415,8 @@ class PixelDA():
 		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=5)
 
 		n_sample = imgs_A.shape[0]
-		noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
+		# noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
+		noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 		# Translate images to the other domain
 		fake_B = self.generator.predict([imgs_A, noise_prior])
@@ -432,6 +453,8 @@ class PixelDA():
 			predict_steps = stop_after
 
 		noise_vec = np.random.normal(0,1, 10)
+		assert 1==2
+		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 		print("Performing Pixel-level domain adaptation on original images...")
 		adaptaed_images = self.generator.predict([self.data_loader.mnist_X[:32*predict_steps], np.tile(noise_vec, (32*predict_steps,1))], batch_size=32) #, steps=predict_steps
@@ -456,6 +479,9 @@ class PixelDA():
 		np.random.seed(seed=seed)
 
 		noise_vec = np.random.normal(0,1, (sample_size, 10))
+		assert 1==2
+		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
+
 
 		print("Performing Pixel-level domain adaptation on original images...")
 		collections = []
@@ -489,11 +515,18 @@ class PixelDA():
 
 if __name__ == '__main__':
 	gan = PixelDA()
+	gan.build_all_model()
+	gan.load_dataset()
+
 	# gan.summary()
-	gan.load_pretrained_weights(weights_path='../Weights/exp9.h5')
+
+	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
+	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
+	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
+	gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100/exp0.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
-	gan.deploy_classification()
+	# gan.deploy_classification()
