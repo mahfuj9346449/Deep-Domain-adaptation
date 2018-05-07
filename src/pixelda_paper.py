@@ -217,7 +217,7 @@ class PixelDA():
 		d3 = d_layer(d2, self.df*4, normalization=False)
 		d4 = d_layer(d3, self.df*8, normalization=False)
 		d5 = d_layer(d4, self.df*16, normalization=False)
-		
+
 		# validity = Conv2D(1, kernel_size=4, strides=2, padding='same')(d5)
 		validity = Dense(1, activation='sigmoid')(Flatten()(d5))
 
@@ -454,7 +454,7 @@ class PixelDA():
 		else:
 			predict_steps = stop_after
 
-		noise_vec = np.random.normal(0,1, 10)
+		noise_vec = np.random.normal(0,1, self.noise_size[0])
 		assert 1==2
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
@@ -480,7 +480,7 @@ class PixelDA():
 
 		np.random.seed(seed=seed)
 
-		noise_vec = np.random.normal(0,1, (sample_size, 10))
+		noise_vec = np.random.normal(0,1, (sample_size, self.noise_size[0]))
 		assert 1==2
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
