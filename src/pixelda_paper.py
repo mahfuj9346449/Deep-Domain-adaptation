@@ -101,14 +101,14 @@ class PixelDA():
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (100,)
+		self.noise_size = (10,)
 
 		# Calculate output shape of D (PatchGAN)
 		patch = int(self.img_rows / 2**4)
 		self.disc_patch = (patch, patch, 1)
 
 		# Number of residual blocks in the generator
-		self.residual_blocks = 6
+		self.residual_blocks = 3 #6
 
 	def build_all_model(self):
 		# Loss weights
@@ -187,7 +187,7 @@ class PixelDA():
 		# keras.layers.concatenate
 
 		# l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(img)
-		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(conditioned_img)
+		l1 = Conv2D(64, kernel_size=3, strides=1, padding='same', activation='relu')(conditioned_img)
 		
 
 		# Propogate signal through residual blocks
@@ -195,7 +195,7 @@ class PixelDA():
 		for _ in range(self.residual_blocks - 1):
 			r = residual_block(r)
 
-		output_img = Conv2D(self.channels, kernel_size=3, padding='same', activation='tanh')(r)
+		output_img = Conv2D(self.channels, kernel_size=3, strides=1, padding='same', activation='tanh')(r)
 
 		return Model([img, noise], output_img)
 
@@ -216,8 +216,10 @@ class PixelDA():
 		d2 = d_layer(d1, self.df*2, normalization=False)
 		d3 = d_layer(d2, self.df*4, normalization=False)
 		d4 = d_layer(d3, self.df*8, normalization=False)
-
-		validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
+		d5 = d_layer(d4, self.df*16, normalization=False)
+		
+		# validity = Conv2D(1, kernel_size=4, strides=2, padding='same')(d5)
+		validity = Dense(1, activation='sigmoid')(Flatten()(d5))
 
 		return Model(img, validity)
 
@@ -234,9 +236,9 @@ class PixelDA():
 		img = Input(shape=self.img_shape, name='image_input')
 
 		c1 = clf_layer(img, self.cf, normalization=False)
-		c2 = clf_layer(c1, self.cf*2, normalization=False)
-		c3 = clf_layer(c2, self.cf*4, normalization=False)
-		c4 = clf_layer(c3, self.cf*8, normalization=False)
+		c2 = clf_layer(c1, self.cf*2)
+		c3 = clf_layer(c2, self.cf*4)
+		c4 = clf_layer(c3, self.cf*8)
 		c5 = clf_layer(c4, self.cf*8)
 
 		class_pred = Dense(self.num_classes, activation='softmax')(Flatten()(c5))
@@ -516,16 +518,16 @@ class PixelDA():
 if __name__ == '__main__':
 	gan = PixelDA()
 	gan.build_all_model()
-	gan.load_dataset()
+	# gan.load_dataset()
 
-	# gan.summary()
+	gan.summary()
 
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
 	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
-	gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
+	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100/exp0.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
