@@ -101,7 +101,7 @@ class PixelDA():
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (100,)
+		self.noise_size = (1024,)#(1024,)
 
 		# Calculate output shape of D (PatchGAN)
 		patch = int(self.img_rows / 2**4)
@@ -478,8 +478,8 @@ class PixelDA():
 
 		np.random.seed(seed=seed)
 
-		noise_vec = np.random.normal(0,1, (sample_size, 10))
-		assert 1==2
+		noise_vec = np.random.normal(0,5, (sample_size, self.noise_size[0]))
+		# assert 1==2
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 
@@ -519,14 +519,14 @@ if __name__ == '__main__':
 	gan.load_dataset()
 
 	# gan.summary()
-
+	gan.load_pretrained_weights(weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
 	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
-	gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
+	# gan.train(epochs=20000, batch_size=64, sample_interval=20, save_sample2dir="../samples/Exp0_gaussian_noise_1024_no_batchnorm/exp1", save_weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
-	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
+	gan.deploy_debug(save2file="../domain_adapted/Exp0_gaussian_noise_1024_no_batchnorm/debug1.npy", sample_size=100, seed = 0)
 	# gan.deploy_classification()
