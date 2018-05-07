@@ -101,7 +101,7 @@ class PixelDA():
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (1024,)#(1024,)
+		self.noise_size = (100,)
 
 		# Calculate output shape of D (PatchGAN)
 		patch = int(self.img_rows / 2**4)
@@ -478,8 +478,8 @@ class PixelDA():
 
 		np.random.seed(seed=seed)
 
-		noise_vec = np.random.normal(0,5, (sample_size, self.noise_size[0]))
-		# assert 1==2
+		noise_vec = np.random.normal(0,1, (sample_size, self.noise_size[0]))
+		assert 1==2
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 
