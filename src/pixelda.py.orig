@@ -101,14 +101,14 @@ class PixelDA():
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (10,)
+		self.noise_size = (1024,)#(1024,)
 
 		# Calculate output shape of D (PatchGAN)
 		patch = int(self.img_rows / 2**4)
 		self.disc_patch = (patch, patch, 1)
 
 		# Number of residual blocks in the generator
-		self.residual_blocks = 3 #6
+		self.residual_blocks = 6
 
 	def build_all_model(self):
 		# Loss weights
@@ -187,7 +187,7 @@ class PixelDA():
 		# keras.layers.concatenate
 
 		# l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(img)
-		l1 = Conv2D(64, kernel_size=3, strides=1, padding='same', activation='relu')(conditioned_img)
+		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(conditioned_img)
 		
 
 		# Propogate signal through residual blocks
@@ -195,7 +195,7 @@ class PixelDA():
 		for _ in range(self.residual_blocks - 1):
 			r = residual_block(r)
 
-		output_img = Conv2D(self.channels, kernel_size=3, strides=1, padding='same', activation='tanh')(r)
+		output_img = Conv2D(self.channels, kernel_size=3, padding='same', activation='tanh')(r)
 
 		return Model([img, noise], output_img)
 
@@ -216,10 +216,8 @@ class PixelDA():
 		d2 = d_layer(d1, self.df*2, normalization=False)
 		d3 = d_layer(d2, self.df*4, normalization=False)
 		d4 = d_layer(d3, self.df*8, normalization=False)
-		d5 = d_layer(d4, self.df*16, normalization=False)
 
-		# validity = Conv2D(1, kernel_size=4, strides=2, padding='same')(d5)
-		validity = Dense(1, activation='sigmoid')(Flatten()(d5))
+		validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 
 		return Model(img, validity)
 
@@ -236,9 +234,9 @@ class PixelDA():
 		img = Input(shape=self.img_shape, name='image_input')
 
 		c1 = clf_layer(img, self.cf, normalization=False)
-		c2 = clf_layer(c1, self.cf*2)
-		c3 = clf_layer(c2, self.cf*4)
-		c4 = clf_layer(c3, self.cf*8)
+		c2 = clf_layer(c1, self.cf*2, normalization=False)
+		c3 = clf_layer(c2, self.cf*4, normalization=False)
+		c4 = clf_layer(c3, self.cf*8, normalization=False)
 		c5 = clf_layer(c4, self.cf*8)
 
 		class_pred = Dense(self.num_classes, activation='softmax')(Flatten()(c5))
@@ -269,8 +267,8 @@ class PixelDA():
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 
-		# half_batch = batch_size #int(batch_size / 2) ### TODO
-		half_batch = int(batch_size / 2)
+		half_batch = batch_size #int(batch_size / 2) ### TODO
+		# half_batch = int(batch_size / 2)
 		
 
 
@@ -311,8 +309,8 @@ class PixelDA():
 			# Translate images from domain A to domain B
 			fake_B = self.generator.predict([imgs_A, noise_prior])
 			
-			valid = np.ones((half_batch, 1))
-			fake = np.zeros((half_batch, 1))
+			valid = np.ones((half_batch,) + self.disc_patch)
+			fake = np.zeros((half_batch,) + self.disc_patch)
 			# fake = -valid # TODO 6/5/2018 NEW
 			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
 			D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
@@ -336,7 +334,7 @@ class PixelDA():
 			labels_A = to_categorical(labels_A, num_classes=self.num_classes)
 
 			# The generators want the discriminators to label the translated images as real
-			valid = np.ones((batch_size,1))
+			valid = np.ones((batch_size,) + self.disc_patch)
 
 			#
 			noise_prior = np.random.normal(0,1, (batch_size, self.noise_size[0])) # TODO
@@ -412,13 +410,13 @@ class PixelDA():
 		if not os.path.exists(save2dir):
 			os.makedirs(save2dir)
 
-		r, c = 2, 10
+		r, c = 2, 5
 
-		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)
+		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=5)
 
 		n_sample = imgs_A.shape[0]
-		noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
-		# noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
+		# noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
+		noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 		# Translate images to the other domain
 		fake_B = self.generator.predict([imgs_A, noise_prior])
@@ -480,8 +478,13 @@ class PixelDA():
 
 		np.random.seed(seed=seed)
 
+<<<<<<< HEAD
+		noise_vec = np.random.normal(0,5, (sample_size, self.noise_size[0]))
+		# assert 1==2
+=======
 		noise_vec = np.random.normal(0,1, (sample_size, self.noise_size[0]))
 		assert 1==2
+>>>>>>> f82d7facc6a2597ccbe2d3af77f6b6d827d4f83d
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 
@@ -521,14 +524,14 @@ if __name__ == '__main__':
 	gan.load_dataset()
 
 	# gan.summary()
-
+	gan.load_pretrained_weights(weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
 	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
-	gan.train(epochs=20000, batch_size=64, sample_interval=100, save_sample2dir="../samples/Paper/exp0", save_weights_path='../Weights/Paper/exp0.h5', save_model=False)
+	# gan.train(epochs=20000, batch_size=64, sample_interval=20, save_sample2dir="../samples/Exp0_gaussian_noise_1024_no_batchnorm/exp1", save_weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
-	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
+	gan.deploy_debug(save2file="../domain_adapted/Exp0_gaussian_noise_1024_no_batchnorm/debug1.npy", sample_size=100, seed = 0)
 	# gan.deploy_classification()

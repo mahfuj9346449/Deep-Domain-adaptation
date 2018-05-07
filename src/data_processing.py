@@ -89,6 +89,6 @@ class DataLoader():
 		X = self.mnist_X if domain == 'A' else self.mnistm_X
 		y = self.mnist_y if domain == 'A' else self.mnistm_y
 
-		idx = np.random.choice(list(range(len(X))), size=batch_size)
+		idx = np.random.choice(list(range(len(X))), size=batch_size, replace=False)
 
 		return X[idx], y[idx]
