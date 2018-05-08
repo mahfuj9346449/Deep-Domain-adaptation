@@ -79,7 +79,7 @@ import numpy as np
 from time import time
 
 
-class PixelDA():
+class PixelDA(object):
 	"""
 	Paradigm of GAN (keras implementation)
 
@@ -429,7 +429,7 @@ class PixelDA():
 		gen_imgs = 0.5 * gen_imgs + 0.5
 
 		#titles = ['Original', 'Translated']
-		fig, axs = plt.subplots(r, c)
+		fig, axs = plt.subplots(r, c, figsize=(20, 4))
 		cnt = 0
 		for i in range(r):
 			for j in range(c):

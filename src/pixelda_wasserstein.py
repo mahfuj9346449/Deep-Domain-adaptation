@@ -79,7 +79,7 @@ import numpy as np
 from time import time
 
 
-class PixelDA():
+class PixelDA(object):
 	"""
 	Paradigm of GAN (keras implementation)
 
@@ -94,14 +94,14 @@ class PixelDA():
 
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
-	def __init__(self):
+	def __init__(self, noise_size=100, use_PatchGAN=False):
 		# Input shape
 		self.img_rows = 32
 		self.img_cols = 32
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (100,)
+		self.noise_size = (noise_size,)#(100,)
 
 		# Calculate output shape of D (PatchGAN)
 		patch = int(self.img_rows / 2**4)
@@ -109,6 +109,7 @@ class PixelDA():
 
 		# Number of residual blocks in the generator
 		self.residual_blocks = 6
+		self.use_PatchGAN = use_PatchGAN #False
 
 	def build_all_model(self):
 		# Loss weights
@@ -217,8 +218,10 @@ class PixelDA():
 		d3 = d_layer(d2, self.df*4, normalization=False)
 		d4 = d_layer(d3, self.df*8, normalization=False)
 
-		validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
-
+		if self.use_PatchGAN: # NEW 7/5/2018
+			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
+		else:
+			validity = Dense(1, activation='sigmoid')(Flatten()(d4)) 
 		return Model(img, validity)
 
 	def build_classifier(self):
@@ -267,8 +270,8 @@ class PixelDA():
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 
-		half_batch = batch_size #int(batch_size / 2) ### TODO
-		# half_batch = int(batch_size / 2)
+		# half_batch = batch_size #int(batch_size / 2) ### TODO
+		half_batch = int(batch_size / 2)
 		
 
 
@@ -308,9 +311,12 @@ class PixelDA():
 			
 			# Translate images from domain A to domain B
 			fake_B = self.generator.predict([imgs_A, noise_prior])
-			
-			valid = np.ones((half_batch,) + self.disc_patch)
-			fake = np.zeros((half_batch,) + self.disc_patch)
+			if self.use_PatchGAN:
+				valid = np.ones((half_batch,) + self.disc_patch)
+				fake = np.zeros((half_batch,) + self.disc_patch)
+			else:
+				valid = np.ones((half_batch, 1))
+				fake = np.zeros((half_batch, 1))
 			# fake = -valid # TODO 6/5/2018 NEW
 			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
 			D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
@@ -334,7 +340,10 @@ class PixelDA():
 			labels_A = to_categorical(labels_A, num_classes=self.num_classes)
 
 			# The generators want the discriminators to label the translated images as real
-			valid = np.ones((batch_size,) + self.disc_patch)
+			if self.use_PatchGAN:
+				valid = np.ones((batch_size,) + self.disc_patch)
+			else:
+				valid = np.ones((batch_size, 1))
 
 			#
 			noise_prior = np.random.normal(0,1, (batch_size, self.noise_size[0])) # TODO
@@ -410,13 +419,13 @@ class PixelDA():
 		if not os.path.exists(save2dir):
 			os.makedirs(save2dir)
 
-		r, c = 2, 5
+		r, c = 2, 10
 
-		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=5)
+		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)
 
 		n_sample = imgs_A.shape[0]
-		# noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
-		noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
+		noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
+		# noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 		# Translate images to the other domain
 		fake_B = self.generator.predict([imgs_A, noise_prior])
@@ -427,7 +436,7 @@ class PixelDA():
 		gen_imgs = 0.5 * gen_imgs + 0.5
 
 		#titles = ['Original', 'Translated']
-		fig, axs = plt.subplots(r, c)
+		fig, axs = plt.subplots(r, c, figsize=(20, 4))
 		cnt = 0
 		for i in range(r):
 			for j in range(c):
@@ -514,7 +523,7 @@ class PixelDA():
 		print("+ All done.")
 
 if __name__ == '__main__':
-	gan = PixelDA()
+	gan = PixelDA(noise_size=100, use_PatchGAN=False)
 	gan.build_all_model()
 	gan.load_dataset()
 
