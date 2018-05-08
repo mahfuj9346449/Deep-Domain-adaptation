@@ -78,6 +78,16 @@ import numpy as np
 
 from time import time
 
+def wasserstein_loss(y_true, y_pred):
+	"""Calculates the Wasserstein loss for a sample batch.
+	The Wasserstein loss function is very simple to calculate. In a standard GAN, the discriminator
+	has a sigmoid output, representing the probability that samples are real or generated. In Wasserstein
+	GANs, however, the output is linear with no activation function! Instead of being constrained to [0, 1],
+	the discriminator wants to make the distance between its output for real and generated samples as large as possible.
+	The most natural way to achieve this is to label generated samples -1 and real samples 1, instead of the
+	0 and 1 used in normal GANs, so that multiplying the outputs by the labels will give you the loss immediately.
+	Note that the nature of this loss means that it can be (and frequently will be) less than 0."""
+	return K.mean(y_true * y_pred)
 
 class PixelDA(object):
 	"""
@@ -94,7 +104,7 @@ class PixelDA(object):
 
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
-	def __init__(self, noise_size=100, use_PatchGAN=False):
+	def __init__(self, noise_size=100, use_PatchGAN=False, use_Wasserstein=True):
 		# Input shape
 		self.img_rows = 32
 		self.img_cols = 32
@@ -110,7 +120,7 @@ class PixelDA(object):
 		# Number of residual blocks in the generator
 		self.residual_blocks = 6
 		self.use_PatchGAN = use_PatchGAN #False
-
+		self.use_Wasserstein = use_Wasserstein
 	def build_all_model(self):
 		# Loss weights
 		lambda_adv = 10
@@ -126,9 +136,14 @@ class PixelDA(object):
 		# Build and compile the discriminators
 		self.discriminator = self.build_discriminator()
 		self.discriminator.name = "Discriminator"
-		self.discriminator.compile(loss='mse',
-			optimizer=optimizer,
-			metrics=['accuracy'])
+		if self.use_Wasserstein:
+			self.discriminator.compile(loss=wasserstein_loss,
+				optimizer=optimizer,
+				metrics=['accuracy'])
+		else:
+			self.discriminator.compile(loss='mse',
+				optimizer=optimizer,
+				metrics=['accuracy'])
 
 		# Build the generator
 		self.generator = self.build_generator()
@@ -155,10 +170,18 @@ class PixelDA(object):
 		valid = self.discriminator(fake_B)
 
 		self.combined = Model([img_A, noise], [valid, class_pred])
-		self.combined.compile(loss=['mse', 'categorical_crossentropy'],
-									loss_weights=[lambda_adv, lambda_clf],
-									optimizer=optimizer,
-									metrics=['accuracy'])
+		if self.use_Wasserstein:
+			
+			self.combined.compile(loss=[wasserstein_loss, 'categorical_crossentropy'],
+										loss_weights=[lambda_adv, lambda_clf],
+										optimizer=optimizer,
+										metrics=['accuracy'])
+		else:
+			self.combined.compile(loss=['mse', 'categorical_crossentropy'],
+										loss_weights=[lambda_adv, lambda_clf],
+										optimizer=optimizer,
+										metrics=['accuracy'])
+
 
 	def load_dataset(self):
 		# Configure MNIST and MNIST-M data loader
@@ -214,14 +237,17 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape)
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2, normalization=False)
-		d3 = d_layer(d2, self.df*4, normalization=False)
-		d4 = d_layer(d3, self.df*8, normalization=False)
+		d2 = d_layer(d1, self.df*2)
+		d3 = d_layer(d2, self.df*4)
+		d4 = d_layer(d3, self.df*8)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 		else:
-			validity = Dense(1, activation='sigmoid')(Flatten()(d4)) 
+			if self.use_Wasserstein: # NEW 8/5/2018
+				validity = Dense(1, kernel_initializer='he_normal')(Flatten()(d4)) # he_normal ?? TODO
+			else:
+				validity = Dense(1, activation='sigmoid')(Flatten()(d4)) 
 		return Model(img, validity)
 
 	def build_classifier(self):
@@ -237,9 +263,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name='image_input')
 
 		c1 = clf_layer(img, self.cf, normalization=False)
-		c2 = clf_layer(c1, self.cf*2, normalization=False)
-		c3 = clf_layer(c2, self.cf*4, normalization=False)
-		c4 = clf_layer(c3, self.cf*8, normalization=False)
+		c2 = clf_layer(c1, self.cf*2)
+		c3 = clf_layer(c2, self.cf*4)
+		c4 = clf_layer(c3, self.cf*8)
 		c5 = clf_layer(c4, self.cf*8)
 
 		class_pred = Dense(self.num_classes, activation='softmax')(Flatten()(c5))
@@ -273,22 +299,9 @@ class PixelDA(object):
 		# half_batch = batch_size #int(batch_size / 2) ### TODO
 		half_batch = int(batch_size / 2)
 		
-
-
 		# Classification accuracy on 100 last batches of domain B
 		test_accs = []
-		print("="*50)
-		print("Discriminator summary:")
-		self.discriminator.summary()
-		print("="*50)
-		print("Generator summary:")
-		self.generator.summary()
-		print("="*50)
-		print("Classifier summary:")
-		self.clf.summary()
-		print("="*50)
-		print("All summary:")
-		self.combined.summary()
+
 
 		## Monitor to save model weights Lu
 		best_test_cls_acc = 0
@@ -315,8 +328,12 @@ class PixelDA(object):
 				valid = np.ones((half_batch,) + self.disc_patch)
 				fake = np.zeros((half_batch,) + self.disc_patch)
 			else:
-				valid = np.ones((half_batch, 1))
-				fake = np.zeros((half_batch, 1))
+				if self.use_Wasserstein:
+					valid = np.ones((half_batch, 1))
+					fake = - np.ones((half_batch, 1)) # = - valid ? TODO
+				else:
+					valid = np.ones((half_batch, 1))
+					fake = np.zeros((half_batch, 1))
 			# fake = -valid # TODO 6/5/2018 NEW
 			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
 			D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
@@ -526,15 +543,14 @@ if __name__ == '__main__':
 	gan = PixelDA(noise_size=100, use_PatchGAN=False)
 	gan.build_all_model()
 	gan.load_dataset()
-
-	# gan.summary()
+	gan.summary()
 
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
 	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
-	gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
+	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
