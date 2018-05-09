@@ -66,7 +66,7 @@ from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Model #load_model
+from keras.models import Model, Sequential #load_model
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.utils import to_categorical
 import datetime
@@ -74,9 +74,12 @@ import matplotlib.pyplot as plt
 import sys
 from data_processing import DataLoader
 import numpy as np
-
-
+from keras.layers.merge import _Merge
+from keras import backend as K
 from time import time
+from functools import partial
+
+GRADIENT_PENALTY_WEIGHT = 10  # As per the paper
 
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
@@ -87,7 +90,54 @@ def wasserstein_loss(y_true, y_pred):
 	The most natural way to achieve this is to label generated samples -1 and real samples 1, instead of the
 	0 and 1 used in normal GANs, so that multiplying the outputs by the labels will give you the loss immediately.
 	Note that the nature of this loss means that it can be (and frequently will be) less than 0."""
-	return K.mean(y_true * y_pred)
+	return -K.mean(y_true * y_pred)
+
+def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_weight):
+	"""Calculates the gradient penalty loss for a batch of "averaged" samples.
+	In Improved WGANs, the 1-Lipschitz constraint is enforced by adding a term to the loss function
+	that penalizes the network if the gradient norm moves away from 1. However, it is impossible to evaluate
+	this function at all points in the input space. The compromise used in the paper is to choose random points
+	on the lines between real and generated samples, and check the gradients at these points. Note that it is the
+	gradient w.r.t. the input averaged samples, not the weights of the discriminator, that we're penalizing!
+	In order to evaluate the gradients, we must first run samples through the generator and evaluate the loss.
+	Then we get the gradients of the discriminator w.r.t. the input averaged samples.
+	The l2 norm and penalty can then be calculated for this gradient.
+	Note that this loss function requires the original averaged samples as input, but Keras only supports passing
+	y_true and y_pred to loss functions. To get around this, we make a partial() of the function with the
+	averaged_samples argument, and use that for model training."""
+	# first get the gradients:
+	#   assuming: - that y_pred has dimensions (batch_size, 1)
+	#             - averaged_samples has dimensions (batch_size, nbr_features)
+	# gradients afterwards has dimension (batch_size, nbr_features), basically
+	# a list of nbr_features-dimensional gradient vectors
+	gradients = K.gradients(y_pred, averaged_samples)[0]
+	# compute the euclidean norm by squaring ...
+	gradients_sqr = K.square(gradients)
+	#   ... summing over the rows ...
+	gradients_sqr_sum = K.sum(gradients_sqr,
+							  axis=np.arange(1, len(gradients_sqr.shape)))
+	#   ... and sqrt
+	gradient_l2_norm = K.sqrt(gradients_sqr_sum)
+	# compute lambda * (1 - ||grad||)^2 still for each single sample
+	gradient_penalty = gradient_penalty_weight * K.square(1 - gradient_l2_norm)
+	# return the mean as loss over all the batch samples
+	return K.mean(gradient_penalty)
+
+class RandomWeightedAverage(_Merge):
+	"""Takes a randomly-weighted average of two tensors. In geometric terms, this outputs a random point on the line
+	between each pair of input points.
+	Inheriting from _Merge is a little messy but it was the quickest solution I could think of.
+	Improvements appreciated."""
+	def __init__(self, batch_size=32):
+		super(RandomWeightedAverage, self).__init__()
+		self.batch_size = batch_size
+
+	def _merge_function(self, inputs):
+		weights = K.random_uniform((1, 1, 1))
+		return (weights * inputs[0]) + ((1 - weights) * inputs[1])
+
+
+		
 
 class PixelDA(object):
 	"""
@@ -97,7 +147,7 @@ class PixelDA(object):
 		1a) Compile D
 	2. Construct G
 	3. Set D.trainable = False
-	4. Stack G and D, to construct GAN 
+	4. Stack G and D, to construct GAN (combined model)
 		 4a) Compile GAN
 	
 	Approved by fchollet: "the process you describe is in fact correct."
@@ -121,7 +171,8 @@ class PixelDA(object):
 		self.residual_blocks = 6
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
-	def build_all_model(self):
+	def build_all_model(self, batch_size=32):
+		self.batch_size = batch_size
 		# Loss weights
 		lambda_adv = 10
 		lambda_clf = 1
@@ -136,14 +187,43 @@ class PixelDA(object):
 		# Build and compile the discriminators
 		self.discriminator = self.build_discriminator()
 		self.discriminator.name = "Discriminator"
+
+
+		img_A = Input(shape=self.img_shape, name='source_image') # real A
+		img_B = Input(shape=self.img_shape, name='target_image') # real B
+		fake_img = Input(shape=self.img_shape, name="fake_image") # fake B
+
+		# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
+		avg_img = RandomWeightedAverage(batch_size=self.batch_size)([img_A, fake_img])
+		
+
+		real_img_rating = self.discriminator(img_B) # TODO img_A
+		fake_img_rating = self.discriminator(fake_img)
+		avg_img_output = self.discriminator(avg_img)
+
+		# The gradient penalty loss function requires the input averaged samples to get gradients. However,
+		# Keras loss functions can only have two arguments, y_true and y_pred. We get around this by making a partial()
+		# of the function with the averaged samples here.
+		partial_gp_loss = partial(gradient_penalty_loss,
+					  averaged_samples=avg_img,
+					  gradient_penalty_weight=GRADIENT_PENALTY_WEIGHT)
+		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
+
 		if self.use_Wasserstein:
-			self.discriminator.compile(loss=wasserstein_loss,
+			self.discriminator_model = Model(inputs=[img_B, fake_img, img_A],  #, avg_img
+											outputs=[real_img_rating, fake_img_rating, avg_img_output])
+			self.discriminator_model.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
 				metrics=['accuracy'])
 		else:
 			self.discriminator.compile(loss='mse',
 				optimizer=optimizer,
 				metrics=['accuracy'])
+
+
+
+		# For the combined model we will only train the generator and classifier
+		self.discriminator.trainable = False
 
 		# Build the generator
 		self.generator = self.build_generator()
@@ -152,7 +232,7 @@ class PixelDA(object):
 		self.clf = self.build_classifier()
 		self.clf.name = "Classifier" 
 		# Input images from both domains
-		img_A = Input(shape=self.img_shape, name='source_image')
+
 		
 		# Input noise
 		noise = Input(shape=self.noise_size, name='noise_input')
@@ -163,24 +243,22 @@ class PixelDA(object):
 		# Classify the translated image
 		class_pred = self.clf(fake_B)
 
-		# For the combined model we will only train the generator and classifier
-		self.discriminator.trainable = False
-
+		
 		# Discriminator determines validity of translated images
-		valid = self.discriminator(fake_B)
-
-		self.combined = Model([img_A, noise], [valid, class_pred])
+		valid = self.discriminator(fake_B) # fake_B_rating
 		if self.use_Wasserstein:
-			
-			self.combined.compile(loss=[wasserstein_loss, 'categorical_crossentropy'],
-										loss_weights=[lambda_adv, lambda_clf],
-										optimizer=optimizer,
-										metrics=['accuracy'])
+			self.combined = Model(inputs=[img_A, noise], outputs=[valid, class_pred])
+			self.combined.compile(optimizer=optimizer, 
+									loss=[wasserstein_loss, 'categorical_crossentropy'],
+									# loss_weights=[lambda_adv, lambda_clf], # TODO NEW 
+									metrics=['accuracy'])
 		else:
+			self.combined = Model([img_A, noise], [valid, class_pred])
 			self.combined.compile(loss=['mse', 'categorical_crossentropy'],
 										loss_weights=[lambda_adv, lambda_clf],
 										optimizer=optimizer,
 										metrics=['accuracy'])
+
 
 
 	def load_dataset(self):
@@ -224,6 +302,34 @@ class PixelDA(object):
 		return Model([img, noise], output_img)
 
 
+	# def build_discriminator(self):
+
+	# 	model = Sequential()
+	# 	model.add(Input(shape=self.img_shape, name='image'))
+	# 	def d_layer(model, filters, f_size=4, normalization=True):
+	# 		"""Discriminator layer"""
+	# 		model.add(Conv2D(filters, kernel_size=f_size, strides=2, padding='same'))
+	# 		model.add(LeakyReLU(alpha=0.2))
+
+	# 		if normalization:
+	# 			model.add(InstanceNormalization())
+	# 		return model
+
+	# 	model = d_layer(model, self.df, normalization=False)
+	# 	model = d_layer(model, self.df*2)
+	# 	model = d_layer(model, self.df*4)
+	# 	model = d_layer(model, self.df*8)
+
+	# 	if self.use_PatchGAN: # NEW 7/5/2018
+	# 		model.add(Conv2D(1, kernel_size=4, strides=1, padding='same'))
+	# 	else:
+	# 		if self.use_Wasserstein: # NEW 8/5/2018
+	# 			model.add(Flatten())
+	# 			model.add(Dense(1, kernel_initializer='he_normal')) # he_normal ?? TODO
+	# 		else:
+	# 			model.add(Flatten())
+	# 			model.add(Dense(1, activation='sigmoid'))
+	# 	return model
 	def build_discriminator(self):
 
 		def d_layer(layer_input, filters, f_size=4, normalization=True):
@@ -234,12 +340,12 @@ class PixelDA(object):
 				d = InstanceNormalization()(d)
 			return d
 
-		img = Input(shape=self.img_shape)
+		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2)
-		d3 = d_layer(d2, self.df*4)
-		d4 = d_layer(d3, self.df*8)
+		d2 = d_layer(d1, self.df*2, normalization=False)
+		d3 = d_layer(d2, self.df*4, normalization=False)
+		d4 = d_layer(d3, self.df*8, normalization=False)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
@@ -247,7 +353,9 @@ class PixelDA(object):
 			if self.use_Wasserstein: # NEW 8/5/2018
 				validity = Dense(1, kernel_initializer='he_normal')(Flatten()(d4)) # he_normal ?? TODO
 			else:
-				validity = Dense(1, activation='sigmoid')(Flatten()(d4)) 
+				validity = Dense(1, activation='sigmoid')(Flatten()(d4))
+			
+
 		return Model(img, validity)
 
 	def build_classifier(self):
@@ -286,8 +394,13 @@ class PixelDA(object):
 		print("="*50)
 		print("Classifier summary:")
 		self.clf.summary()
+		
+		if self.use_Wasserstein:
+			print("="*50)
+			print("Discriminator model summary:")
+			self.discriminator_model.summary()
 		print("="*50)
-		print("All summary:")
+		print("Combined model summary:")
 		self.combined.summary()
 
 
@@ -331,18 +444,24 @@ class PixelDA(object):
 				if self.use_Wasserstein:
 					valid = np.ones((half_batch, 1))
 					fake = - np.ones((half_batch, 1)) # = - valid ? TODO
+					dummy_y = np.zeros((batch_size, 1)) # NEW
 				else:
 					valid = np.ones((half_batch, 1))
 					fake = np.zeros((half_batch, 1))
 			# fake = -valid # TODO 6/5/2018 NEW
-			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
 			D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
+			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
+			
 
 			# Train the discriminators (original images = real / translated = Fake)
 			# d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
 			# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
 			# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-			d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
+			if self.use_Wasserstein:
+				
+				d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
+			else:
+				d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
 
 
 			# --------------------------------
@@ -540,9 +659,9 @@ class PixelDA(object):
 		print("+ All done.")
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=100, use_PatchGAN=False)
+	gan = PixelDA(noise_size=100, use_PatchGAN=False, use_Wasserstein=True)
 	gan.build_all_model()
-	gan.load_dataset()
+	# gan.load_dataset()
 	gan.summary()
 
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
