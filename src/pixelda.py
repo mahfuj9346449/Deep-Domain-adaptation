@@ -488,7 +488,7 @@ class PixelDA(object):
 		np.random.seed(seed=seed)
 
 		noise_vec = np.random.normal(0,1, (sample_size, self.noise_size[0]))
-		assert 1==2
+		# assert 1==2
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
 
@@ -526,16 +526,18 @@ if __name__ == '__main__':
 	gan = PixelDA(noise_size=100, use_PatchGAN=False)
 	gan.build_all_model()
 	gan.load_dataset()
-	gan.load_pretrained_weights(weights_path='../Weights/Paper2/exp0.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/Paper2/exp2.h5')
 	# gan.summary()
 	# gan.load_pretrained_weights(weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
-	gan.train(epochs=50000, batch_size=32, sample_interval=20, save_sample2dir="../samples/Paper2/Exp1", save_weights_path='../Weights/Paper2/exp1.h5')
+	# gan.train(epochs=50000, batch_size=64, sample_interval=20, save_sample2dir="../samples/Paper2/Exp2", save_weights_path='../Weights/Paper2/exp2.h5')
 	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
 	# gan.train(epochs=20000, batch_size=64, sample_interval=20, save_sample2dir="../samples/Exp0_gaussian_noise_1024_no_batchnorm/exp1", save_weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/Exp0_gaussian_noise_1024_no_batchnorm/debug1.npy", sample_size=100, seed = 0)
+	
+	gan.deploy_debug(save2file="../domain_adapted/Paper2_exp2/debug.npy", sample_size=100)
 	# gan.deploy_classification()
