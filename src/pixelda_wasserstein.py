@@ -79,7 +79,7 @@ from keras import backend as K
 from time import time
 from functools import partial
 
-GRADIENT_PENALTY_WEIGHT = 10  # As per the paper
+
 
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
@@ -171,6 +171,14 @@ class PixelDA(object):
 		self.residual_blocks = 6
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
+
+		if self.use_Wasserstein:
+			self.critic_steps = 5
+		else:
+			self.critic_steps = 1
+		
+		self.GRADIENT_PENALTY_WEIGHT = 10  # As the paper
+
 	def build_all_model(self, batch_size=32):
 		self.batch_size = batch_size
 		# Loss weights
@@ -194,7 +202,7 @@ class PixelDA(object):
 		fake_img = Input(shape=self.img_shape, name="fake_image") # fake B
 
 		# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
-		avg_img = RandomWeightedAverage(batch_size=self.batch_size)([img_A, fake_img])
+		avg_img = RandomWeightedAverage(batch_size=self.batch_size)([img_B, fake_img])
 		
 
 		real_img_rating = self.discriminator(img_B) # TODO img_A
@@ -206,11 +214,12 @@ class PixelDA(object):
 		# of the function with the averaged samples here.
 		partial_gp_loss = partial(gradient_penalty_loss,
 					  averaged_samples=avg_img,
-					  gradient_penalty_weight=GRADIENT_PENALTY_WEIGHT)
+					  gradient_penalty_weight=self.GRADIENT_PENALTY_WEIGHT)
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
-			self.discriminator_model = Model(inputs=[img_B, fake_img, img_A],  #, avg_img
+			self.discriminator_model = Model(inputs=[img_B, fake_img],  #, avg_img
+											# loss_weights=[1,1,1], # useless, since we have multiply the penalization by GRADIENT_PENALTY_WEIGHT=10
 											outputs=[real_img_rating, fake_img_rating, avg_img_output])
 			self.discriminator_model.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
@@ -250,7 +259,7 @@ class PixelDA(object):
 			self.combined = Model(inputs=[img_A, noise], outputs=[valid, class_pred])
 			self.combined.compile(optimizer=optimizer, 
 									loss=[wasserstein_loss, 'categorical_crossentropy'],
-									# loss_weights=[lambda_adv, lambda_clf], # TODO NEW 
+									loss_weights=[lambda_adv, lambda_clf], # TODO NEW 
 									metrics=['accuracy'])
 		else:
 			self.combined = Model([img_A, noise], [valid, class_pred])
@@ -426,42 +435,42 @@ class PixelDA(object):
 			# ---------------------
 			# n_sample = half_batch # imgs_A.shape[0]
 			
-			
+			for _ in range(self.critic_steps):
 
-			imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=half_batch)
-			imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=half_batch)
-			
-			
-			noise_prior = np.random.normal(0,1, (half_batch, self.noise_size[0])) # TODO
-			# noise_prior = np.random.rand(half_batch, self.noise_size[0]) # TODO 6/5/2018
-			
-			# Translate images from domain A to domain B
-			fake_B = self.generator.predict([imgs_A, noise_prior])
-			if self.use_PatchGAN:
-				valid = np.ones((half_batch,) + self.disc_patch)
-				fake = np.zeros((half_batch,) + self.disc_patch)
-			else:
-				if self.use_Wasserstein:
-					valid = np.ones((half_batch, 1))
-					fake = - np.ones((half_batch, 1)) # = - valid ? TODO
-					dummy_y = np.zeros((batch_size, 1)) # NEW
-				else:
-					valid = np.ones((half_batch, 1))
-					fake = np.zeros((half_batch, 1))
-			# fake = -valid # TODO 6/5/2018 NEW
-			D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
-			D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
-			
-
-			# Train the discriminators (original images = real / translated = Fake)
-			# d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
-			# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
-			# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-			if self.use_Wasserstein:
+				imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=half_batch)
+				imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=half_batch)
 				
-				d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
-			else:
-				d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
+				
+				noise_prior = np.random.normal(0,1, (half_batch, self.noise_size[0])) # TODO
+				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) # TODO 6/5/2018
+				
+				# Translate images from domain A to domain B
+				fake_B = self.generator.predict([imgs_A, noise_prior])
+				if self.use_PatchGAN:
+					valid = np.ones((half_batch,) + self.disc_patch)
+					fake = np.zeros((half_batch,) + self.disc_patch)
+				else:
+					if self.use_Wasserstein:
+						valid = np.ones((half_batch, 1))
+						fake = - np.ones((half_batch, 1)) # = - valid ? TODO
+						dummy_y = np.zeros((batch_size, 1)) # NEW
+					else:
+						valid = np.ones((half_batch, 1))
+						fake = np.zeros((half_batch, 1))
+				# fake = -valid # TODO 6/5/2018 NEW
+				D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
+				D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
+				
+
+				# Train the discriminators (original images = real / translated = Fake)
+				# d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
+				# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
+				# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+				if self.use_Wasserstein:
+					d_loss = self.discriminator_model.train_on_batch(D_train_images, D_train_label, dummy_y)
+					# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
+				else:
+					d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
 
 
 			# --------------------------------
