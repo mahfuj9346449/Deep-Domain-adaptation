@@ -45,7 +45,7 @@ if args.gpu == "simple":
 
 	if machine_name == "lulin-QX-350-Series":
 		print("Using local machine..")
-		KTF.set_session(get_session(gpu_fraction=0.4)) # NEW 28-9-2017
+		KTF.set_session(get_session(gpu_fraction=0.2)) # NEW 28-9-2017
 	else:
 		KTF.set_session(get_session(gpu_fraction=0.95)) # NEW 28-9-2017
 		
@@ -66,7 +66,7 @@ from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Model #load_model
+from keras.models import Model, Sequential #load_model
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.utils import to_categorical
 import datetime
@@ -74,7 +74,7 @@ import matplotlib.pyplot as plt
 import sys
 from data_processing import DataLoader
 import numpy as np
-
+from keras.utils import plot_model
 
 from time import time
 
@@ -87,7 +87,7 @@ class PixelDA(object):
 		1a) Compile D
 	2. Construct G
 	3. Set D.trainable = False
-	4. Stack G and D, to construct GAN 
+	4. Stack G and D, to construct GAN (combined model)
 		 4a) Compile GAN
 	
 	Approved by fchollet: "the process you describe is in fact correct."
@@ -111,11 +111,13 @@ class PixelDA(object):
 		self.residual_blocks = 6
 		self.use_PatchGAN = use_PatchGAN #False
 
-	def build_all_model(self):
+	def build_all_model(self, batch_size=32):
+		self.batch_size = batch_size
 		# Loss weights
 		lambda_adv = 10
 		lambda_clf = 1
 		# optimizer = Adam(0.0002, 0.5)
+		# optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9)
 		# optimizer = SGD(lr=0.0001)
 		optimizer = RMSprop(lr=1e-5)
 
@@ -211,7 +213,7 @@ class PixelDA(object):
 				d = InstanceNormalization()(d)
 			return d
 
-		img = Input(shape=self.img_shape)
+		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
 		d2 = d_layer(d1, self.df*2, normalization=False)
@@ -237,9 +239,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name='image_input')
 
 		c1 = clf_layer(img, self.cf, normalization=False)
-		c2 = clf_layer(c1, self.cf*2, normalization=False)
-		c3 = clf_layer(c2, self.cf*4, normalization=False)
-		c4 = clf_layer(c3, self.cf*8, normalization=False)
+		c2 = clf_layer(c1, self.cf*2)
+		c3 = clf_layer(c2, self.cf*4)
+		c4 = clf_layer(c3, self.cf*8)
 		c5 = clf_layer(c4, self.cf*8)
 
 		class_pred = Dense(self.num_classes, activation='softmax')(Flatten()(c5))
@@ -261,10 +263,18 @@ class PixelDA(object):
 		print("Classifier summary:")
 		self.clf.summary()
 		print("="*50)
-		print("All summary:")
+		print("Combined model summary:")
 		self.combined.summary()
 
-
+	def write_tensorboard_graph(self, to_dir="../logs", save_png2dir="../Model_graph"):
+		if not os.path.exists(save_png2dir):
+			os.makedirs(save_png2dir)
+		tensorboard = keras.callbacks.TensorBoard(log_dir=to_dir, histogram_freq=0, write_graph=True, write_images=False)
+		# tensorboard.set_model(self.combined)
+		tensorboard.set_model(self.discriminator)
+		plot_model(self.combined, to_file=os.path.join(save_png2dir, "Combined_model.png"))
+		plot_model(self.discriminator, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+		
 	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
 		if not os.path.exists(dirpath):
@@ -277,18 +287,7 @@ class PixelDA(object):
 
 		# Classification accuracy on 100 last batches of domain B
 		test_accs = []
-		print("="*50)
-		print("Discriminator summary:")
-		self.discriminator.summary()
-		print("="*50)
-		print("Generator summary:")
-		self.generator.summary()
-		print("="*50)
-		print("Classifier summary:")
-		self.clf.summary()
-		print("="*50)
-		print("All summary:")
-		self.combined.summary()
+
 
 		## Monitor to save model weights Lu
 		best_test_cls_acc = 0
@@ -525,9 +524,10 @@ class PixelDA(object):
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=100, use_PatchGAN=False)
 	gan.build_all_model()
-	gan.load_dataset()
-	gan.load_pretrained_weights(weights_path='../Weights/Paper2/exp3_bis.h5')
-	# gan.summary()
+	# gan.load_dataset()
+	# gan.load_pretrained_weights(weights_path='../Weights/Paper2/exp3_bis.h5')
+	gan.summary()
+	gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/Exp0_gaussian_noise_1024_no_batchnorm/exp1.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
@@ -540,4 +540,4 @@ if __name__ == '__main__':
 	# gan.deploy_debug(save2file="../domain_adapted/Exp0_gaussian_noise_1024_no_batchnorm/debug1.npy", sample_size=100, seed = 0)
 	
 	# gan.deploy_debug(save2file="../domain_adapted/Paper2_exp2/debug.npy", sample_size=100)
-	gan.deploy_classification()
+	# gan.deploy_classification()

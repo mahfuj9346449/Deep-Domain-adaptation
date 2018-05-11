@@ -3,5 +3,6 @@ domain_adapted/**
 samples/**
 saved_model/**
 Weights/**
+logs/**
 *.pyc
 *.ipynb_checkpoints

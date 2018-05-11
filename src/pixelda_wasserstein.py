@@ -45,7 +45,7 @@ if args.gpu == "simple":
 
 	if machine_name == "lulin-QX-350-Series":
 		print("Using local machine..")
-		KTF.set_session(get_session(gpu_fraction=0.4)) # NEW 28-9-2017
+		KTF.set_session(get_session(gpu_fraction=0.2)) # NEW 28-9-2017
 	else:
 		KTF.set_session(get_session(gpu_fraction=0.95)) # NEW 28-9-2017
 		
@@ -78,7 +78,7 @@ from keras.layers.merge import _Merge
 from keras import backend as K
 from time import time
 from functools import partial
-
+from keras.utils import plot_model
 
 
 def wasserstein_loss(y_true, y_pred):
@@ -415,7 +415,15 @@ class PixelDA(object):
 		print("Combined model summary:")
 		self.combined.summary()
 
-
+	def write_tensorboard_graph(self, to_dir="../logs", save_png2dir="../Model_graph"):
+		if not os.path.exists(save_png2dir):
+			os.makedirs(save_png2dir)
+		tensorboard = keras.callbacks.TensorBoard(log_dir=to_dir, histogram_freq=0, write_graph=True, write_images=False)
+		# tensorboard.set_model(self.combined)
+		tensorboard.set_model(self.discriminator_model)
+		plot_model(self.combined, to_file=os.path.join(save_png2dir, "Combined_model.png"))
+		plot_model(self.discriminator_model, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+		
 	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
 		if not os.path.exists(dirpath):
@@ -677,9 +685,10 @@ class PixelDA(object):
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=100, use_PatchGAN=False, use_Wasserstein=True)
 	gan.build_all_model()
-	gan.load_dataset()
-	# gan.summary()
-	gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp0", save_weights_path='../Weights/WGAN_GP/Exp0.h5')
+	# gan.load_dataset()
+	gan.summary()
+	gan.write_tensorboard_graph()
+	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp0", save_weights_path='../Weights/WGAN_GP/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
