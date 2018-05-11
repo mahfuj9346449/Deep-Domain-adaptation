@@ -192,7 +192,7 @@ class PixelDA(object):
 		# optimizer = RMSprop(lr=1e-5)
 
 		# Number of filters in first layer of discriminator and classifier
-		self.df = 64
+		self.df = 128 # NEW TODO #64 11/5/2018
 		self.cf = 64
 
 		# Build and compile the discriminators
@@ -355,9 +355,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2, normalization=False)
-		d3 = d_layer(d2, self.df*4, normalization=False)
-		d4 = d_layer(d3, self.df*8, normalization=False)
+		d2 = d_layer(d1, self.df*2, normalization=True)
+		d3 = d_layer(d2, self.df*4, normalization=True)
+		d4 = d_layer(d3, self.df*8, normalization=True)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
@@ -421,8 +421,11 @@ class PixelDA(object):
 		tensorboard = keras.callbacks.TensorBoard(log_dir=to_dir, histogram_freq=0, write_graph=True, write_images=False)
 		# tensorboard.set_model(self.combined)
 		tensorboard.set_model(self.discriminator_model)
-		plot_model(self.combined, to_file=os.path.join(save_png2dir, "Combined_model.png"))
-		plot_model(self.discriminator_model, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+		try:
+			plot_model(self.combined, to_file=os.path.join(save_png2dir, "Combined_model.png"))
+			plot_model(self.discriminator_model, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+		except:
+			pass
 		
 	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
@@ -528,7 +531,11 @@ class PixelDA(object):
 			# 								100*float(test_acc), 100*float(np.mean(test_accs))))
 			
 			if epoch % 10 == 0:
-				print(d_loss)
+				with open(os.path.join(dirpath, "D_Losses.csv"), "ab") as csv_file:
+					np.savetxt(csv_file, np.array(d_loss).reshape(1,-1), delimiter=",")
+				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
+					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
+
 				if self.use_Wasserstein:
 					d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
 				else:
@@ -579,24 +586,27 @@ class PixelDA(object):
 		if not os.path.exists(save2dir):
 			os.makedirs(save2dir)
 
-		r, c = 2, 10
+		r, c = 5, 10
 
 		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)
 
 		n_sample = imgs_A.shape[0]
-		noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
-		# noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
-		# Translate images to the other domain
-		fake_B = self.generator.predict([imgs_A, noise_prior])
+		gen_imgs = imgs_A
+		for i in range(r-1):
+			noise_prior = np.random.normal(0,1, (n_sample, self.noise_size[0])) # TODO
+			# noise_prior = np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
-		gen_imgs = np.concatenate([imgs_A, fake_B])
+			# Translate images to the other domain
+			fake_B = self.generator.predict([imgs_A, noise_prior])
+			gen_imgs = np.concatenate([gen_imgs, fake_B])
 
-		# Rescale images 0 - 1
+		# Rescale images to 0 - 1
 		gen_imgs = 0.5 * gen_imgs + 0.5
 
 		#titles = ['Original', 'Translated']
-		fig, axs = plt.subplots(r, c, figsize=(20, 4))
+		fig, axs = plt.subplots(r, c, figsize=(2*c, 2*r))
+
 		cnt = 0
 		for i in range(r):
 			for j in range(c):
@@ -638,7 +648,7 @@ class PixelDA(object):
 
 		print("+ All done.")
 
-	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=9, seed = 0):
+	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=100, noise_number=128, seed = 17):
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -646,18 +656,24 @@ class PixelDA(object):
 		dirname = "/".join(save2file.split("/")[:-1])
 
 		np.random.seed(seed=seed)
-
-		noise_vec = np.random.normal(0,1, (sample_size, self.noise_size[0]))
-		assert 1==2
+		
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
 
-
 		print("Performing Pixel-level domain adaptation on original images...")
-		collections = []
-		for i in range(sample_size):
-			adaptaed_images = self.generator.predict([self.data_loader.mnist_X[:15], np.tile(noise_vec[i], (15,1))], batch_size=15)
+		# noise_vec = np.random.normal(0,1, (sample_size, self.noise_size[0]))
+		# collections = []
+		# for i in range(sample_size):
+		# 	adaptaed_images = self.generator.predict([self.data_loader.mnist_X[:15], np.tile(noise_vec[i], (15,1))], batch_size=15)
 
+		# 	collections.append(adaptaed_images)
+		collections = []
+		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
+
+		for i in range(sample_size):
+			noise_vec = np.random.normal(0,3, (noise_number, self.noise_size[0]))
+			adaptaed_images = self.generator.predict([np.tile(imgs_A[i], (noise_number,1,1,1)), noise_vec], batch_size=32)
 			collections.append(adaptaed_images)
+		
 		print("+ Done.")
 
 		print("Saving transformed images to file {}".format(save2file))
@@ -685,10 +701,11 @@ class PixelDA(object):
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=100, use_PatchGAN=False, use_Wasserstein=True)
 	gan.build_all_model()
-	# gan.load_dataset()
+	gan.load_dataset()
 	gan.summary()
 	gan.write_tensorboard_graph()
-	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp0", save_weights_path='../Weights/WGAN_GP/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path="../Weights/WGAN_GP/Exp0.h5")
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp1", save_weights_path='../Weights/WGAN_GP/Exp2/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
@@ -697,5 +714,5 @@ if __name__ == '__main__':
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
-	# gan.deploy_debug(save2file="../domain_adapted/Exp7/debug.npy", sample_size=100, seed = 0)
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp0/debug2.npy", sample_size=100, seed = 0)
 	# gan.deploy_classification()
