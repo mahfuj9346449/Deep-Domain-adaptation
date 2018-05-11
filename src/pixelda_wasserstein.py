@@ -137,7 +137,9 @@ class RandomWeightedAverage(_Merge):
 		return (weights * inputs[0]) + ((1 - weights) * inputs[1])
 
 
-		
+def my_critic_acc(y_true, y_pred):
+	sign = K.less(K.zeros(1), y_true*y_pred)
+	return K.mean(sign)
 
 class PixelDA(object):
 	"""
@@ -173,7 +175,7 @@ class PixelDA(object):
 		self.use_Wasserstein = use_Wasserstein
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5
+			self.critic_steps = 10
 		else:
 			self.critic_steps = 1
 		
@@ -185,8 +187,9 @@ class PixelDA(object):
 		lambda_adv = 10
 		lambda_clf = 1
 		# optimizer = Adam(0.0002, 0.5)
+		optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9)
 		# optimizer = SGD(lr=0.0001)
-		optimizer = RMSprop(lr=1e-5)
+		# optimizer = RMSprop(lr=1e-5)
 
 		# Number of filters in first layer of discriminator and classifier
 		self.df = 64
@@ -223,7 +226,7 @@ class PixelDA(object):
 											outputs=[real_img_rating, fake_img_rating, avg_img_output])
 			self.discriminator_model.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
-				metrics=['accuracy'])
+				metrics=[my_critic_acc])
 		else:
 			self.discriminator.compile(loss='mse',
 				optimizer=optimizer,
@@ -360,7 +363,7 @@ class PixelDA(object):
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 		else:
 			if self.use_Wasserstein: # NEW 8/5/2018
-				validity = Dense(1, kernel_initializer='he_normal')(Flatten()(d4)) # he_normal ?? TODO
+				validity = Dense(1)(Flatten()(d4)) # he_normal ?? TODO
 			else:
 				validity = Dense(1, activation='sigmoid')(Flatten()(d4))
 			
@@ -418,8 +421,8 @@ class PixelDA(object):
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 
-		# half_batch = batch_size #int(batch_size / 2) ### TODO
-		half_batch = int(batch_size / 2)
+		half_batch = batch_size #int(batch_size / 2) ### TODO
+		# half_batch = int(batch_size / 2)
 		
 		# Classification accuracy on 100 last batches of domain B
 		test_accs = []
@@ -467,7 +470,7 @@ class PixelDA(object):
 				# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
 				# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 				if self.use_Wasserstein:
-					d_loss = self.discriminator_model.train_on_batch(D_train_images, D_train_label, dummy_y)
+					d_loss = self.discriminator_model.train_on_batch([imgs_B, fake_B], [valid, fake, dummy_y])
 					# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
 				else:
 					d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
@@ -517,9 +520,11 @@ class PixelDA(object):
 			# 								100*float(test_acc), 100*float(np.mean(test_accs))))
 			
 			if epoch % 10 == 0:
-				
-				
-				d_train_acc = 100*float(d_loss[1])
+				print(d_loss)
+				if self.use_Wasserstein:
+					d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
+				else:
+					d_train_acc = 100*float(d_loss[1])
 				
 				gen_loss = g_loss[1]
 
@@ -547,6 +552,8 @@ class PixelDA(object):
 						self.combined.save(save_weights_path)
 					else:
 						self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
+
+
 					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
 
 				else:
@@ -670,9 +677,9 @@ class PixelDA(object):
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=100, use_PatchGAN=False, use_Wasserstein=True)
 	gan.build_all_model()
-	# gan.load_dataset()
-	gan.summary()
-
+	gan.load_dataset()
+	# gan.summary()
+	gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp0", save_weights_path='../Weights/WGAN_GP/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
