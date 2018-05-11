@@ -184,7 +184,7 @@ class PixelDA(object):
 	def build_all_model(self, batch_size=32):
 		self.batch_size = batch_size
 		# Loss weights
-		lambda_adv = 10
+		lambda_adv = 7
 		lambda_clf = 1
 		# optimizer = Adam(0.0002, 0.5)
 		optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9)
@@ -363,7 +363,7 @@ class PixelDA(object):
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 		else:
 			if self.use_Wasserstein: # NEW 8/5/2018
-				validity = Dense(1)(Flatten()(d4)) # he_normal ?? TODO
+				validity = Dense(1, activation=None)(Flatten()(d4)) # he_normal ?? TODO
 			else:
 				validity = Dense(1, activation='sigmoid')(Flatten()(d4))
 			
@@ -466,14 +466,13 @@ class PixelDA(object):
 				else:
 					if self.use_Wasserstein:
 						valid = np.ones((half_batch, 1))
-						fake = - np.ones((half_batch, 1)) # = - valid ? TODO
+						fake = - valid #np.ones((half_batch, 1)) # = - valid ? TODO
 						dummy_y = np.zeros((batch_size, 1)) # NEW
 					else:
 						valid = np.ones((half_batch, 1))
 						fake = np.zeros((half_batch, 1))
 				# fake = -valid # TODO 6/5/2018 NEW
-				D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
-				D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
+				
 				
 
 				# Train the discriminators (original images = real / translated = Fake)
@@ -484,6 +483,8 @@ class PixelDA(object):
 					d_loss = self.discriminator_model.train_on_batch([imgs_B, fake_B], [valid, fake, dummy_y])
 					# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
 				else:
+					D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
+					D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
 					d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
 
 
@@ -705,7 +706,7 @@ if __name__ == '__main__':
 	gan.summary()
 	gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path="../Weights/WGAN_GP/Exp0.h5")
-	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp1", save_weights_path='../Weights/WGAN_GP/Exp2/Exp2.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
