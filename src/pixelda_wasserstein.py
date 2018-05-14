@@ -175,7 +175,7 @@ class PixelDA(object):
 		self.use_Wasserstein = use_Wasserstein
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5 #10
+			self.critic_steps = 7 #10
 		else:
 			self.critic_steps = 1
 		
@@ -192,7 +192,7 @@ class PixelDA(object):
 		# optimizer = RMSprop(lr=1e-5)
 
 		# Number of filters in first layer of discriminator and classifier
-		self.df = 128 # NEW TODO #64 11/5/2018
+		self.df = 64 # NEW TODO #64 11/5/2018
 		self.cf = 64
 
 		# Build and compile the discriminators
@@ -280,7 +280,7 @@ class PixelDA(object):
 	def build_generator(self):
 		"""Resnet Generator"""
 
-		def residual_block(layer_input):
+		def residual_block(layer_input, normalization=False):
 			"""Residual block described in paper"""
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(layer_input)
 			if normalization:
@@ -511,6 +511,8 @@ class PixelDA(object):
 				
 
 				if self.use_Wasserstein:
+					d_real_acc = 100*float(d_loss[4])
+					d_fake_acc = 100*float(d_loss[5])
 					d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
 				else:
 					d_train_acc = 100*float(d_loss[1])
@@ -541,7 +543,9 @@ class PixelDA(object):
 						self.combined.save(save_weights_path)
 					else:
 						self.combined.save_weights(save_weights_path)	
-					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (latest)".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (latest)"
+						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					 
 				elif test_mean_acc > second_best_cls_acc:
 					second_best_cls_acc = test_mean_acc
 					
@@ -551,11 +555,13 @@ class PixelDA(object):
 						self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
 
 
-					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)"
+						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
 
 				else:
 
-					print("{} : [D - loss: {:.5f}, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)]"
+						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
 
 
 			# If at save interval => save generated image samples
@@ -688,6 +694,7 @@ if __name__ == '__main__':
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4", save_weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
