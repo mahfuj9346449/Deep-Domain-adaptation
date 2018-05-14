@@ -89,6 +89,8 @@ except:
 	print("Can't import Sobol library.")
 	pass
 
+from tqdm import tqdm
+
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
 	The Wasserstein loss function is very simple to calculate. In a standard GAN, the discriminator
@@ -665,9 +667,9 @@ class PixelDA(object):
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 
-		for i in range(sample_size):
+		for i in tqdm(range(sample_size)):
 			if use_Sobol:
-				noise_vec = 5*(2*i4_sobol_generate(self.noise_size[0], noise_number).T-1)
+				noise_vec = 5*(2*i4_sobol_generate(self.noise_size[0], noise_number, i*noise_number).T-1)
 			else:
 				noise_vec = np.random.normal(0,3, (noise_number, self.noise_size[0]))
 			adaptaed_images = self.generator.predict([np.tile(imgs_A[i], (noise_number,1,1,1)), noise_vec], batch_size=32)
@@ -703,9 +705,9 @@ if __name__ == '__main__':
 	gan.load_dataset()
 	gan.summary()
 	# gan.write_tensorboard_graph()
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
-	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4", save_weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_1", save_weights_path='../Weights/WGAN_GP/Exp4_1/Exp1.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
@@ -714,5 +716,5 @@ if __name__ == '__main__':
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
-	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp3/debug.npy", sample_size=100, noise_number=256, seed = 17)
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4/debug_sobol.npy", sample_size=100, noise_number=256, seed = 17)
 	# gan.deploy_classification()
