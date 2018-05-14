@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import scipy
-import os
+import os, sys
 # import keras
 # import tensorflow as tf
 # import keras.backend.tensorflow_backend as KTF
@@ -21,8 +21,11 @@ if args.gpu == "simple":
 	print("="*50)
 	if machine_name == "lulin-QX-350-Series":
 		os.environ["CUDA_VISIBLE_DEVICES"]="0"
+		sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 	else:
 		os.environ["CUDA_VISIBLE_DEVICES"]="1"
+		sys.path.append("/home/lulin/na4/my_packages")
+
 		import matplotlib as mpl 
 		mpl.use("Agg")
 		# Qt_XKB_CONFIG_ROOT (add path ?)
@@ -71,7 +74,7 @@ from keras.optimizers import Adam, SGD, RMSprop
 from keras.utils import to_categorical
 import datetime
 import matplotlib.pyplot as plt
-import sys
+
 from data_processing import DataLoader
 import numpy as np
 from keras.layers.merge import _Merge
@@ -80,6 +83,11 @@ from time import time
 from functools import partial
 from keras.utils import plot_model
 
+try:
+	from HPOlib_lu.Quasi_Monte_Carlo.sobol_lib import i4_sobol_generate
+except:
+	print("Can't import Sobol library.")
+	pass
 
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
@@ -630,7 +638,7 @@ class PixelDA(object):
 
 		print("+ All done.")
 
-	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=100, noise_number=128, seed = 17):
+	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=100, noise_number=128, use_Sobol=True, seed = 17):
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -652,7 +660,10 @@ class PixelDA(object):
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 
 		for i in range(sample_size):
-			noise_vec = np.random.normal(0,3, (noise_number, self.noise_size[0]))
+			if use_Sobol:
+				noise_vec = 5*(2*i4_sobol_generate(self.noise_size[0], noise_number).T-1)
+			else:
+				noise_vec = np.random.normal(0,3, (noise_number, self.noise_size[0]))
 			adaptaed_images = self.generator.predict([np.tile(imgs_A[i], (noise_number,1,1,1)), noise_vec], batch_size=32)
 			collections.append(adaptaed_images)
 		
