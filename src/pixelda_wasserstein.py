@@ -170,16 +170,16 @@ class PixelDA(object):
 		self.disc_patch = (patch, patch, 1)
 
 		# Number of residual blocks in the generator
-		self.residual_blocks = 6
+		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 
 		if self.use_Wasserstein:
-			self.critic_steps = 10
+			self.critic_steps = 5 #10
 		else:
 			self.critic_steps = 1
 		
-		self.GRADIENT_PENALTY_WEIGHT = 10  # As the paper
+		self.GRADIENT_PENALTY_WEIGHT = 5#10  # As the paper
 
 	def build_all_model(self, batch_size=32):
 		self.batch_size = batch_size
@@ -283,10 +283,14 @@ class PixelDA(object):
 		def residual_block(layer_input):
 			"""Residual block described in paper"""
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(layer_input)
-			d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
+			if normalization:
+				d = InstanceNormalization()(d)
+				# d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
 			d = Activation('relu')(d)
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(d)
-			d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
+			if normalization:
+				d = InstanceNormalization()(d)
+				# d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
 			d = Add()([d, layer_input])
 			return d
 
@@ -314,34 +318,6 @@ class PixelDA(object):
 		return Model([img, noise], output_img)
 
 
-	# def build_discriminator(self):
-
-	# 	model = Sequential()
-	# 	model.add(Input(shape=self.img_shape, name='image'))
-	# 	def d_layer(model, filters, f_size=4, normalization=True):
-	# 		"""Discriminator layer"""
-	# 		model.add(Conv2D(filters, kernel_size=f_size, strides=2, padding='same'))
-	# 		model.add(LeakyReLU(alpha=0.2))
-
-	# 		if normalization:
-	# 			model.add(InstanceNormalization())
-	# 		return model
-
-	# 	model = d_layer(model, self.df, normalization=False)
-	# 	model = d_layer(model, self.df*2)
-	# 	model = d_layer(model, self.df*4)
-	# 	model = d_layer(model, self.df*8)
-
-	# 	if self.use_PatchGAN: # NEW 7/5/2018
-	# 		model.add(Conv2D(1, kernel_size=4, strides=1, padding='same'))
-	# 	else:
-	# 		if self.use_Wasserstein: # NEW 8/5/2018
-	# 			model.add(Flatten())
-	# 			model.add(Dense(1, kernel_initializer='he_normal')) # he_normal ?? TODO
-	# 		else:
-	# 			model.add(Flatten())
-	# 			model.add(Dense(1, activation='sigmoid'))
-	# 	return model
 	def build_discriminator(self):
 
 		def d_layer(layer_input, filters, f_size=4, normalization=True):
@@ -471,7 +447,7 @@ class PixelDA(object):
 					else:
 						valid = np.ones((half_batch, 1))
 						fake = np.zeros((half_batch, 1))
-				# fake = -valid # TODO 6/5/2018 NEW
+				
 				
 				
 
@@ -532,10 +508,7 @@ class PixelDA(object):
 			# 								100*float(test_acc), 100*float(np.mean(test_accs))))
 			
 			if epoch % 10 == 0:
-				with open(os.path.join(dirpath, "D_Losses.csv"), "ab") as csv_file:
-					np.savetxt(csv_file, np.array(d_loss).reshape(1,-1), delimiter=",")
-				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
-					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
+				
 
 				if self.use_Wasserstein:
 					d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
@@ -551,6 +524,14 @@ class PixelDA(object):
 				test_mean_acc = 100*float(np.mean(test_accs))
 
 				
+				g_loss.append(current_test_acc)
+				g_loss.append(test_mean_acc)
+
+				with open(os.path.join(dirpath, "D_Losses.csv"), "ab") as csv_file:
+					np.savetxt(csv_file, np.array(d_loss).reshape(1,-1), delimiter=",")
+				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
+					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
+
 
 				if test_mean_acc > best_test_cls_acc:
 					second_best_cls_acc = best_test_cls_acc
@@ -705,7 +686,7 @@ if __name__ == '__main__':
 	gan.load_dataset()
 	gan.summary()
 	# gan.write_tensorboard_graph()
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
@@ -715,5 +696,5 @@ if __name__ == '__main__':
 	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
-	gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp3/debug.npy", sample_size=100, noise_number=256, seed = 17)
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp3/debug.npy", sample_size=100, noise_number=256, seed = 17)
 	# gan.deploy_classification()
