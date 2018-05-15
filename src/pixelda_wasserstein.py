@@ -90,6 +90,7 @@ except:
 	pass
 
 from tqdm import tqdm
+import dill
 
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
@@ -138,9 +139,9 @@ class RandomWeightedAverage(_Merge):
 	between each pair of input points.
 	Inheriting from _Merge is a little messy but it was the quickest solution I could think of.
 	Improvements appreciated."""
-	def __init__(self, batch_size=32):
+	def __init__(self):
 		super(RandomWeightedAverage, self).__init__()
-		self.batch_size = batch_size
+
 
 	def _merge_function(self, inputs):
 		weights = K.random_uniform((1, 1, 1))
@@ -166,44 +167,117 @@ class PixelDA(object):
 
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
-	def __init__(self, noise_size=100, use_PatchGAN=False, use_Wasserstein=True):
+	def __init__(self, noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, **kwargs):
 		# Input shape
 		self.img_rows = 32
 		self.img_cols = 32
 		self.channels = 3
 		self.img_shape = (self.img_rows, self.img_cols, self.channels)
 		self.num_classes = 10
-		self.noise_size = (noise_size,)#(100,)
+		self.noise_size = noise_size #(100,)
 
-		# Calculate output shape of D (PatchGAN)
-		patch = int(self.img_rows / 2**4)
-		self.disc_patch = (patch, patch, 1)
+		# Loss weights
+		self.lambda_adv = 7
+		self.lambda_clf = 1
+		# Number of filters in first layer of discriminator and classifier
+		self.df = 64 # NEW TODO #64 11/5/2018
+		self.cf = 64
+
+
+		
 
 		# Number of residual blocks in the generator
 		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
+		if self.use_PatchGAN:
+			# Calculate output shape of D (PatchGAN)
+			patch = int(self.img_rows / 2**4)
+			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
 			self.critic_steps = 7 #10
 		else:
 			self.critic_steps = 1
 		
-		self.GRADIENT_PENALTY_WEIGHT = 5#10  # As the paper
+		self.GRADIENT_PENALTY_WEIGHT = 5 #10  # As the paper
 
-	def build_all_model(self, batch_size=32):
-		self.batch_size = batch_size
-		# Loss weights
-		lambda_adv = 7
-		lambda_clf = 1
+
+		##### Set up the other attributes
+		for key in kwargs:
+			setattr(self, key, kwargs[key])
+
+	def checktype(self, A):
+		key_to_be_purge = []
+		for key in A:
+			if not type(A[key]) in [list, dict, int, float, str, tuple, np.ndarray, bool]:
+				# A.pop(key)
+				key_to_be_purge.append(key)
+			else:
+				pass
+		print("Purging {} keys (in order to save config): {}.".format(len(key_to_be_purge), key_to_be_purge))
+		for key in key_to_be_purge:
+			A.pop(key)
+		print("+ Done.")
+		return A
+
+	def save_config(self, save2path="./test.dill", verbose=False):
+		"""
+		Save config at the end (before training) !
+
+		"""
+		dirpath = "/".join(save2path.split("/")[:-1])
+
+		if not os.path.exists(dirpath):
+			os.makedirs(dirpath)
+		
+
+		# A shallow copy of self.__dict__
+		normal_attrs = dict(self.__dict__)
+		normal_attrs = self.checktype(normal_attrs)
+	
+		print("Saving {} class attributes to file {}...".format(len(normal_attrs), save2path))
+		with open(save2path, "wb") as file:
+			dill.dump(normal_attrs, file)
+		if verbose:
+			print("Normal attributes are: {}".format(normal_attrs))
+		print("+ Done.")
+		# print(len(self.__dict__))
+
+	def load_config(self, from_file="./test.dill", verbose=False):
+		"""
+		It's important to load config BEFORE build_all_model !
+		"""
+		print("Loading class attributes from file {}...".format(from_file))
+		with open(from_file, "rb") as file:
+			kwargs = dill.load(file)
+		## init default attributes
+		if verbose:
+			print("Number of attributes: {}".format(len(kwargs)))
+		self.__init__(**kwargs) # TODO !!!
+
+		## init attributes that are created in class functions
+		for key in kwargs:
+			setattr(self, key, kwargs[key])
+
+		print("+ Done.")
+
+	def print_config(self):
+		print("="*50)
+		print(" "*20+"Config")
+		print("="*50)
+		for key in self.__dict__:
+			print("{}: {}".format(key, self.__dict__[key]))
+
+		print("="*50)
+	def build_all_model(self):
+
 		# optimizer = Adam(0.0002, 0.5)
 		optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9)
 		# optimizer = SGD(lr=0.0001)
 		# optimizer = RMSprop(lr=1e-5)
 
-		# Number of filters in first layer of discriminator and classifier
-		self.df = 64 # NEW TODO #64 11/5/2018
-		self.cf = 64
+		
 
 		# Build and compile the discriminators
 		self.discriminator = self.build_discriminator()
@@ -215,7 +289,7 @@ class PixelDA(object):
 		fake_img = Input(shape=self.img_shape, name="fake_image") # fake B
 
 		# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
-		avg_img = RandomWeightedAverage(batch_size=self.batch_size)([img_B, fake_img])
+		avg_img = RandomWeightedAverage()([img_B, fake_img])
 		
 
 		real_img_rating = self.discriminator(img_B) # TODO img_A
@@ -272,12 +346,12 @@ class PixelDA(object):
 			self.combined = Model(inputs=[img_A, noise], outputs=[valid, class_pred])
 			self.combined.compile(optimizer=optimizer, 
 									loss=[wasserstein_loss, 'categorical_crossentropy'],
-									loss_weights=[lambda_adv, lambda_clf], # TODO NEW 
+									loss_weights=[self.lambda_adv, self.lambda_clf], # TODO NEW 
 									metrics=['accuracy'])
 		else:
 			self.combined = Model([img_A, noise], [valid, class_pred])
 			self.combined.compile(loss=['mse', 'categorical_crossentropy'],
-										loss_weights=[lambda_adv, lambda_clf],
+										loss_weights=[self.lambda_adv, self.lambda_clf],
 										optimizer=optimizer,
 										metrics=['accuracy'])
 
@@ -700,10 +774,14 @@ class PixelDA(object):
 		print("+ All done.")
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=100, use_PatchGAN=False, use_Wasserstein=True)
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
+	# gan.load_config(verbose=True)
 	gan.build_all_model()
 	gan.load_dataset()
 	gan.summary()
+	gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_1/config.dill") #, save2path=""
+	gan.print_config()
+
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_1/Exp1.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
