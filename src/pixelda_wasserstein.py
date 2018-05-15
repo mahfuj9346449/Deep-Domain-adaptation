@@ -196,11 +196,11 @@ class PixelDA(object):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 7 #10
+			self.critic_steps = 5#7 #10
 		else:
 			self.critic_steps = 1
 		
-		self.GRADIENT_PENALTY_WEIGHT = 5 #10  # As the paper
+		self.GRADIENT_PENALTY_WEIGHT = 5 #10 As the paper
 
 
 		##### Set up the other attributes
@@ -415,9 +415,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2, normalization=True)
-		d3 = d_layer(d2, self.df*4, normalization=True)
-		d4 = d_layer(d3, self.df*8, normalization=True)
+		d2 = d_layer(d1, self.df*2)
+		d3 = d_layer(d2, self.df*4)
+		d4 = d_layer(d3, self.df*8)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
@@ -491,6 +491,7 @@ class PixelDA(object):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
+		self.save_config(save2path=os.path.join(dirpath, "config.dill"), verbose=True)
 
 		half_batch = batch_size #int(batch_size / 2) ### TODO
 		# half_batch = int(batch_size / 2)
@@ -720,7 +721,13 @@ class PixelDA(object):
 
 		print("+ All done.")
 
-	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=100, noise_number=128, use_Sobol=True, seed = 17):
+	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=100, noise_number=128, 
+		use_sobol=False, 
+		use_linear=False, 
+		use_sphere=False, 
+		use_uniform_linear=False, 
+		use_zeros=False,
+		seed = 17):
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -742,8 +749,22 @@ class PixelDA(object):
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 
 		for i in tqdm(range(sample_size)):
-			if use_Sobol:
+			if use_sobol:
 				noise_vec = 5*(2*i4_sobol_generate(self.noise_size[0], noise_number, i*noise_number).T-1)
+			elif use_linear:
+				tangents = 3.0*(2*np.random.random((noise_number, 1))-1)
+				noise_vec = np.ones((noise_number, self.noise_size[0]))*tangents
+			elif use_sphere:
+				noise_vec = 2*(np.random.random((noise_number, self.noise_size[0]))-1)
+				norm_vec = np.linalg.norm(noise_vec, axis=-1)
+				noise_vec = noise_vec/ norm_vec[:, np.newaxis]
+			elif use_uniform_linear:
+				tangents = 5.0*np.linspace(-1,1,noise_number)[:, np.newaxis]
+				noise_vec = np.ones((noise_number, self.noise_size[0]))*tangents
+			elif use_zeros:
+
+				noise_vec = np.zeros((noise_number, self.noise_size[0]))
+				
 			else:
 				noise_vec = np.random.normal(0,3, (noise_number, self.noise_size[0]))
 			adaptaed_images = self.generator.predict([np.tile(imgs_A[i], (noise_number,1,1,1)), noise_vec], batch_size=32)
@@ -775,17 +796,17 @@ class PixelDA(object):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
-	# gan.load_config(verbose=True)
+	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_3/config.dill")
 	gan.build_all_model()
 	gan.load_dataset()
 	gan.summary()
-	gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_1/config.dill") #, save2path=""
+	###### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
 	gan.print_config()
 
 	# gan.write_tensorboard_graph()
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_1/Exp1.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_1", save_weights_path='../Weights/WGAN_GP/Exp4_1/Exp1.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_5", save_weights_path='../Weights/WGAN_GP/Exp4_5/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
@@ -795,4 +816,21 @@ if __name__ == '__main__':
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4/debug_sobol.npy", sample_size=100, noise_number=256, seed = 17)
+	
 	# gan.deploy_classification()
+
+
+
+	#########################
+	#      Good example
+	#########################
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4/debug_zeros1.npy", 
+	# 	sample_size=100, 
+	# 	noise_number=256, 
+	# 	use_sobol=False, 
+	# 	use_linear=False, 
+	# 	use_sphere=False,
+	# 	use_uniform_linear=False,
+	# 	use_zeros=True,
+	# 	seed = 17)
