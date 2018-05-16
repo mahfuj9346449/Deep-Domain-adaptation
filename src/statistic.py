@@ -59,19 +59,48 @@ def plot_G_statistic(history, show=False, save2dir="../results/"):
 	plt.close()
 
 
+
+def download_image_for_gif(imgs_path="../domain_adapted/WGAN_GP/Exp4/debug_uniform_linear.npy"):
+	from tqdm import tqdm 
+	exp_name = imgs_path.split("/")[-2]
+	domain_adapted_images = np.load(imgs_path)
+	domain_adapted_images = (domain_adapted_images+1)/2.
+	
+	r = 5
+	c = 15
+	num_samples = domain_adapted_images.shape[0]
+	num_noises = domain_adapted_images.shape[1]
+	for batch_imgs in tqdm(range(int(num_samples/5))):
+		for batch_noise in range(int(num_noises/15)-1):
+			dirpath = os.path.join("../domain_adapted/collections", exp_name, str(batch_imgs))
+			if not os.path.exists(dirpath):
+				os.makedirs(dirpath)
+
+			fig, axs = plt.subplots(r, c, figsize=(5*c, 5*r))
+			for j in range(r):
+				for i in range(c):
+					axs[j,i].imshow(domain_adapted_images[j+batch_imgs*r][i+batch_noise*c])
+					axs[j,i].axis('off')
+			plt.savefig(os.path.join(dirpath, "{}.png".format(batch_noise)))
+			plt.close()
 if __name__=="__main__":
 	print("Start")
 
-	FOLDER_NAME = "Exp4_12"
-	filepath = "../Weights/WGAN_GP/{}/D_Losses.csv".format(FOLDER_NAME)
-	with open(filepath, "rb") as file:
-		D = np.loadtxt(file, delimiter=",")
-	print(D.shape)
-	plot_D_statistic(D, save2dir="../results/WGAN_GP/{}".format(FOLDER_NAME))
+	# FOLDER_NAME = "Exp4_12"
+	# filepath = "../Weights/WGAN_GP/{}/D_Losses.csv".format(FOLDER_NAME)
+	# with open(filepath, "rb") as file:
+	# 	D = np.loadtxt(file, delimiter=",")
+	# print(D.shape)
+	# plot_D_statistic(D, save2dir="../results/WGAN_GP/{}".format(FOLDER_NAME))
 
 
-	filepath = "../Weights/WGAN_GP/{}/G_Losses.csv".format(FOLDER_NAME)
-	with open(filepath, "rb") as file:
-		G = np.loadtxt(file, delimiter=",")
-	print(G.shape)
-	plot_G_statistic(G, save2dir="../results/WGAN_GP/{}".format(FOLDER_NAME))
+	# filepath = "../Weights/WGAN_GP/{}/G_Losses.csv".format(FOLDER_NAME)
+	# with open(filepath, "rb") as file:
+	# 	G = np.loadtxt(file, delimiter=",")
+	# print(G.shape)
+	# plot_G_statistic(G, save2dir="../results/WGAN_GP/{}".format(FOLDER_NAME))
+
+
+	
+	# import ipdb; ipdb.set_trace()
+	download_image_for_gif()

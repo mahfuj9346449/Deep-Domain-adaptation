@@ -196,11 +196,11 @@ class PixelDA(object):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5 #7 #10
+			self.critic_steps = 10#5 #7 #10
 		else:
 			self.critic_steps = 1
 		
-		self.GRADIENT_PENALTY_WEIGHT = 10#5 #10 As the paper
+		self.GRADIENT_PENALTY_WEIGHT = 5#10#5 #10 As the paper
 
 
 		##### Set up the other attributes
@@ -797,7 +797,7 @@ class PixelDA(object):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
-	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_11/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_12/config.dill")
 	gan.build_all_model()
 	gan.load_dataset()
 	gan.summary()
@@ -809,7 +809,7 @@ if __name__ == '__main__':
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_12/Exp0.h5')
 	
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_12", save_weights_path='../Weights/WGAN_GP/Exp4_12/Exp0.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
@@ -827,13 +827,13 @@ if __name__ == '__main__':
 	#########################
 	#      Good example
 	#########################
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_11/Exp0.h5')
-	gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4_11/debug_zeros.npy", 
-		sample_size=100, 
-		noise_number=256, 
-		use_sobol=False, 
-		use_linear=False, 
-		use_sphere=False,
-		use_uniform_linear=False,
-		use_zeros=True,
-		seed = 17)
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_11/Exp0.h5')
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4_11/debug_zeros.npy", 
+	# 	sample_size=100, 
+	# 	noise_number=256, 
+	# 	use_sobol=False, 
+	# 	use_linear=False, 
+	# 	use_sphere=False,
+	# 	use_uniform_linear=False,
+	# 	use_zeros=True,
+	# 	seed = 17)
