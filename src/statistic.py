@@ -62,16 +62,16 @@ def plot_G_statistic(history, show=False, save2dir="../results/"):
 if __name__=="__main__":
 	print("Start")
 
-
-	filepath = "../Weights/WGAN_GP/Exp3/D_Losses.csv"
+	FOLDER_NAME = "Exp4_12"
+	filepath = "../Weights/WGAN_GP/{}/D_Losses.csv".format(FOLDER_NAME)
 	with open(filepath, "rb") as file:
 		D = np.loadtxt(file, delimiter=",")
 	print(D.shape)
-	plot_D_statistic(D, save2dir="../results/WGAN_GP/Exp3")
+	plot_D_statistic(D, save2dir="../results/WGAN_GP/{}".format(FOLDER_NAME))
 
 
-	filepath = "../Weights/WGAN_GP/Exp3/G_Losses.csv"
+	filepath = "../Weights/WGAN_GP/{}/G_Losses.csv".format(FOLDER_NAME)
 	with open(filepath, "rb") as file:
 		G = np.loadtxt(file, delimiter=",")
 	print(G.shape)
-	plot_G_statistic(G, save2dir="../results/WGAN_GP/Exp3")
+	plot_G_statistic(G, save2dir="../results/WGAN_GP/{}".format(FOLDER_NAME))
