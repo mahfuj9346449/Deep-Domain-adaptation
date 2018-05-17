@@ -86,7 +86,7 @@ def download_image_for_gif(imgs_path="../domain_adapted/WGAN_GP/Exp4/debug_unifo
 if __name__=="__main__":
 	print("Start")
 
-	# FOLDER_NAME = "Exp4_12"
+	# FOLDER_NAME = "Exp4_13"
 	# filepath = "../Weights/WGAN_GP/{}/D_Losses.csv".format(FOLDER_NAME)
 	# with open(filepath, "rb") as file:
 	# 	D = np.loadtxt(file, delimiter=",")
@@ -103,4 +103,4 @@ if __name__=="__main__":
 
 	
 	# import ipdb; ipdb.set_trace()
-	download_image_for_gif()
+	# download_image_for_gif()
