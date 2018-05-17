@@ -27,7 +27,7 @@ if args.gpu == "simple":
 		sys.path.append("/home/lulin/na4/my_packages")
 
 		import matplotlib as mpl 
-		mpl.use("Agg")
+		# mpl.use("Agg")
 		# Qt_XKB_CONFIG_ROOT (add path ?)
 
 	import keras
@@ -794,6 +794,25 @@ class PixelDA(object):
 		print("Length of confidence interval 99%: {}".format(upper_bound-lower_bound))
 		print("="*50)
 		print("+ All done.")
+
+	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4_13/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
+		collections = []
+		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
+
+
+		tangents = linspace_size*np.linspace(-1,1,noise_number)[:, np.newaxis]
+		noise_vec = np.ones((noise_number, self.noise_size[0]))*tangents
+
+		for i in tqdm(range(noise_number)):
+			adaptaed_images = self.generator.predict([imgs_A, np.tile(noise_vec[i],(sample_size, 1))], batch_size=sample_size)
+			collections.append(adaptaed_images)
+		print("+ Done.")
+
+		print("Saving transformed images to file {}".format(save2file))
+		np.save(save2file, np.stack(collections))
+		print("+ All done.")
+
+
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)

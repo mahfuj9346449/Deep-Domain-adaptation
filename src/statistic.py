@@ -3,7 +3,11 @@
 
 import numpy as np 
 import matplotlib.pyplot as plt
-import os
+import os, sys
+sys.path.append("/home/lulin/na4/my_packages")
+sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
+from utils import generator
+
 
 def plot_D_statistic(history, show=False, save2dir="../results/"):
 	if not os.path.exists(save2dir):
@@ -83,6 +87,41 @@ def download_image_for_gif(imgs_path="../domain_adapted/WGAN_GP/Exp4/debug_unifo
 					axs[j,i].axis('off')
 			plt.savefig(os.path.join(dirpath, "{}.png".format(batch_noise)))
 			plt.close()
+
+def download_image_for_gif2(imgs_path="../domain_adapted/WGAN_GP/Exp4_13/demo.npy"):
+	from tqdm import tqdm 
+	exp_name = imgs_path.split("/")[-2]
+	domain_adapted_images = np.load(imgs_path)
+	domain_adapted_images = (domain_adapted_images+1)/2.
+	
+	r = 5
+	c = 5
+	print(domain_adapted_images.shape)
+	for batch_noise in range(num_noises):	
+		dirpath = "../domain_adapted/collections/Exp4_13"
+		if not os.path.exists(dirpath):
+			os.makedirs(dirpath)
+
+		fig, axs = plt.subplots(r, c, figsize=(5*c, 5*r))
+		for j in range(r):
+			for i in range(c):
+				axs[j,i].imshow(domain_adapted_images[batch_noise][c*j+i])
+				axs[j,i].axis('off')
+		plt.savefig(os.path.join(dirpath, "{}.png".format(batch_noise)))
+		plt.close()
+
+def make_gif(dirpath="../samples/exp0", save2path="../demo/test_imageio.gif"):
+	import imageio
+	collections = []
+	for file in generator(root_dir=dirpath, file_type='png', file_label_fun=None, stop_after = None, verbose=1):
+		collections.append(file)
+		# print(file)
+	collections.sort()
+	print(collections)
+	collections = list(map(lambda file:imageio.imread(file), collections))
+	imageio.mimsave(save2path, collections)
+
+
 if __name__=="__main__":
 	print("Start")
 
@@ -104,3 +143,6 @@ if __name__=="__main__":
 	
 	# import ipdb; ipdb.set_trace()
 	# download_image_for_gif()
+
+
+	make_gif(dirpath="../domain_adapted/collections/Exp4/0")
