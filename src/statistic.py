@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
 sys.path.append("/home/lulin/na4/my_packages")
-sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
+# sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 from utils import generator
 
 
@@ -88,16 +88,21 @@ def download_image_for_gif(imgs_path="../domain_adapted/WGAN_GP/Exp4/debug_unifo
 			plt.savefig(os.path.join(dirpath, "{}.png".format(batch_noise)))
 			plt.close()
 
-def download_image_for_gif2(imgs_path="../domain_adapted/WGAN_GP/Exp4_13/demo.npy"):
+def download_image_for_gif2(imgs_path="../domain_adapted/WGAN_GP/Exp4/demo.npy"):
 	from tqdm import tqdm 
+	from time import time
+	print("Loading file...")
+	st = time()
 	exp_name = imgs_path.split("/")[-2]
 	domain_adapted_images = np.load(imgs_path)
 	domain_adapted_images = (domain_adapted_images+1)/2.
-	
+	print("+ Done.")
+	print("Elapsed time {}".format(time()-st))
 	r = 5
 	c = 5
 	print(domain_adapted_images.shape)
-	for batch_noise in range(num_noises):	
+	num_noises = domain_adapted_images.shape[0]
+	for batch_noise in tqdm(range(num_noises)):	
 		dirpath = "../domain_adapted/collections/Exp4_13"
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -112,14 +117,26 @@ def download_image_for_gif2(imgs_path="../domain_adapted/WGAN_GP/Exp4_13/demo.np
 
 def make_gif(dirpath="../samples/exp0", save2path="../demo/test_imageio.gif"):
 	import imageio
+	import cv2
+	dirname = "/".join(save2path.split("/")[:-1])
+	if not os.path.exists(dirname):
+		os.makedirs(dirname)
+
 	collections = []
 	for file in generator(root_dir=dirpath, file_type='png', file_label_fun=None, stop_after = None, verbose=1):
 		collections.append(file)
 		# print(file)
 	collections.sort()
-	print(collections)
-	collections = list(map(lambda file:imageio.imread(file), collections))
+	collections = sorted(collections, key=lambda x:int(x.split("/")[-1].split(".")[0]))
+	# print(collections)
+	print("Reading images...")
+	collections = [cv2.imread(x) for x in collections[100:-100]]
+	# collections = list(map(lambda file:cv2.imread(file), collections))
+	print("+ Done.")
+	print("Making Gif...")
 	imageio.mimsave(save2path, collections)
+	print("+ Done.")
+	# import ipdb; ipdb.set_trace()
 
 
 if __name__=="__main__":
@@ -144,5 +161,7 @@ if __name__=="__main__":
 	# import ipdb; ipdb.set_trace()
 	# download_image_for_gif()
 
-
-	make_gif(dirpath="../domain_adapted/collections/Exp4/0")
+	# download_image_for_gif2()
+	make_gif(dirpath="../domain_adapted/collections/Exp4_13")
+	# print("+ Done.")
+	# make_gif(dirpath="../domain_adapted/collections/Exp4/0")

@@ -184,7 +184,7 @@ class PixelDA(object):
 		self.cf = 64
 
 
-		
+		self.normalize_D = False
 
 		# Number of residual blocks in the generator
 		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
@@ -404,7 +404,7 @@ class PixelDA(object):
 
 	def build_discriminator(self):
 
-		def d_layer(layer_input, filters, f_size=4, normalization=False):
+		def d_layer(layer_input, filters, f_size=4, normalization=self.normalize_D):
 			"""Discriminator layer"""
 			d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
 			d = LeakyReLU(alpha=0.2)(d)
@@ -415,9 +415,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2, normalization=False)
-		d3 = d_layer(d2, self.df*4, normalization=False)
-		d4 = d_layer(d3, self.df*8, normalization=False)
+		d2 = d_layer(d1, self.df*2, normalization=self.normalize_D)
+		d3 = d_layer(d2, self.df*4, normalization=self.normalize_D)
+		d4 = d_layer(d3, self.df*8, normalization=self.normalize_D)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
@@ -795,7 +795,7 @@ class PixelDA(object):
 		print("="*50)
 		print("+ All done.")
 
-	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4_13/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
+	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 
@@ -812,7 +812,7 @@ class PixelDA(object):
 		np.save(save2file, np.stack(collections))
 		print("+ All done.")
 
-	def deploy_cherry_pick(self, save2file="../domain_adapted/WGAN_GP/Exp4_13/demo_cherry_picked.png", sample_size=25, noise_number=25, linspace_size=5.0):
+	def deploy_cherry_pick(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo_cherry_picked.png", sample_size=25, noise_number=25, linspace_size=5.0):
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 		assert noise_number == sample_size
@@ -824,7 +824,7 @@ class PixelDA(object):
 
 		
 		adaptaed_images = self.generator.predict([imgs_A, noise_vec], batch_size=sample_size)
-			
+		adaptaed_images = (adaptaed_images+1)/2
 		print("+ Done.")
 
 		print("Saving transformed images to file {}".format(save2file))
@@ -842,19 +842,21 @@ class PixelDA(object):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
-	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_12/config.dill")
+	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_14/config.dill")
 	gan.build_all_model()
-	gan.load_dataset()
 	gan.summary()
+	gan.load_dataset()
+	
 	###### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
 	
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14_1", save_weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
@@ -868,7 +870,8 @@ if __name__ == '__main__':
 	# gan.deploy_classification()
 
 
-
+	# gan.deploy_cherry_pick(linspace_size=2.5)
+	# gan.deploy_demo_only()
 	#########################
 	#      Good example
 	#########################
