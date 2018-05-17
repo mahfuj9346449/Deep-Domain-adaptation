@@ -822,7 +822,7 @@ class PixelDA(object):
 		
 		np.random.shuffle(noise_vec) # shuffle background color !
 
-		for i in tqdm(range(noise_number)):
+		
 		adaptaed_images = self.generator.predict([imgs_A, noise_vec], batch_size=sample_size)
 			
 		print("+ Done.")
@@ -844,16 +844,17 @@ if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
 	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_12/config.dill")
 	gan.build_all_model()
-	# gan.load_dataset()
+	gan.load_dataset()
 	gan.summary()
 	###### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
 	gan.print_config()
-	gan.write_tensorboard_graph()
+	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
+	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')

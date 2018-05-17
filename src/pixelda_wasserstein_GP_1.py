@@ -404,7 +404,7 @@ class PixelDA(object):
 
 	def build_discriminator(self):
 
-		def d_layer(layer_input, filters, f_size=4, normalization=True):
+		def d_layer(layer_input, filters, f_size=4, normalization=False):
 			"""Discriminator layer"""
 			d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
 			d = LeakyReLU(alpha=0.2)(d)
@@ -415,9 +415,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2)
-		d3 = d_layer(d2, self.df*4)
-		d4 = d_layer(d3, self.df*8)
+		d2 = d_layer(d1, self.df*2, normalization=False)
+		d3 = d_layer(d2, self.df*4, normalization=False)
+		d4 = d_layer(d3, self.df*8, normalization=False)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
