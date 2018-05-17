@@ -404,7 +404,7 @@ class PixelDA(object):
 
 	def build_discriminator(self):
 
-		def d_layer(layer_input, filters, f_size=4, normalization=False):
+		def d_layer(layer_input, filters, f_size=4, normalization=True):
 			"""Discriminator layer"""
 			d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
 			d = LeakyReLU(alpha=0.2)(d)
@@ -415,9 +415,9 @@ class PixelDA(object):
 		img = Input(shape=self.img_shape, name="image")
 
 		d1 = d_layer(img, self.df, normalization=False)
-		d2 = d_layer(d1, self.df*2, normalization=False)
-		d3 = d_layer(d2, self.df*4, normalization=False)
-		d4 = d_layer(d3, self.df*8, normalization=False)
+		d2 = d_layer(d1, self.df*2)
+		d3 = d_layer(d2, self.df*4)
+		d4 = d_layer(d3, self.df*8)
 
 		if self.use_PatchGAN: # NEW 7/5/2018
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
@@ -799,16 +799,17 @@ if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
 	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_12/config.dill")
 	gan.build_all_model()
-	# gan.load_dataset()
+	gan.load_dataset()
 	gan.summary()
 	###### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
 	gan.print_config()
-	gan.write_tensorboard_graph()
+
+	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_12/Exp0.h5')
 	
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
