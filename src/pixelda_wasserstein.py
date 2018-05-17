@@ -812,6 +812,32 @@ class PixelDA(object):
 		np.save(save2file, np.stack(collections))
 		print("+ All done.")
 
+	def deploy_cherry_pick(self, save2file="../domain_adapted/WGAN_GP/Exp4_13/demo_cherry_picked.png", sample_size=25, noise_number=25, linspace_size=5.0):
+		collections = []
+		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
+		assert noise_number == sample_size
+
+		tangents = linspace_size*np.linspace(-1,1,noise_number)[:, np.newaxis]
+		noise_vec = np.ones((noise_number, self.noise_size[0]))*tangents
+		
+		np.random.shuffle(noise_vec) # shuffle background color !
+
+		for i in tqdm(range(noise_number)):
+		adaptaed_images = self.generator.predict([imgs_A, noise_vec], batch_size=sample_size)
+			
+		print("+ Done.")
+
+		print("Saving transformed images to file {}".format(save2file))
+		r = 5
+		c = 5	
+		fig, axs = plt.subplots(r, c, figsize=(5*c, 5*r))
+		for j in range(r):
+			for i in range(c):
+				axs[j,i].imshow(adaptaed_images[c*j+i])
+				axs[j,i].axis('off')
+		plt.savefig(save2file)
+		plt.close()
+		print("+ All done.")
 
 
 if __name__ == '__main__':
