@@ -760,7 +760,7 @@ class PixelDA(object):
 				norm_vec = np.linalg.norm(noise_vec, axis=-1)
 				noise_vec = noise_vec/ norm_vec[:, np.newaxis]
 			elif use_uniform_linear:
-				tangents = 5.0*np.linspace(-1,1,noise_number)[:, np.newaxis]
+				tangents = 10.0*np.linspace(-1,1,noise_number)[:, np.newaxis]
 				noise_vec = np.ones((noise_number, self.noise_size[0]))*tangents
 			elif use_zeros:
 
@@ -805,7 +805,7 @@ if __name__ == '__main__':
 	gan.print_config()
 	gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_12/Exp0.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
@@ -827,12 +827,12 @@ if __name__ == '__main__':
 	#      Good example
 	#########################
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_11/Exp0.h5')
-	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4_11/debug_zeros.npy", 
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4_13/debug_sobol.npy", 
 	# 	sample_size=100, 
 	# 	noise_number=256, 
-	# 	use_sobol=False, 
+	# 	use_sobol=True, 
 	# 	use_linear=False, 
 	# 	use_sphere=False,
 	# 	use_uniform_linear=False,
-	# 	use_zeros=True,
+	# 	use_zeros=False,
 	# 	seed = 17)
