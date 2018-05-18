@@ -183,9 +183,10 @@ class PixelDA(object):
 		self.df = 64 # NEW TODO #64 11/5/2018
 		self.cf = 64
 
-
+		self.normalize_G = False
 		self.normalize_D = False
-
+		self.normalize_C = True
+		
 		# Number of residual blocks in the generator
 		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
@@ -196,11 +197,11 @@ class PixelDA(object):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 10#5 #7 #10
+			self.critic_steps = 5#5 #7 #10
 		else:
 			self.critic_steps = 1
 		
-		self.GRADIENT_PENALTY_WEIGHT = 5#10#5 #10 As the paper
+		self.GRADIENT_PENALTY_WEIGHT = 10#10#5 #10 As the paper
 
 
 		##### Set up the other attributes
@@ -364,7 +365,7 @@ class PixelDA(object):
 	def build_generator(self):
 		"""Resnet Generator"""
 
-		def residual_block(layer_input, normalization=False):
+		def residual_block(layer_input, normalization=self.normalize_G):
 			"""Residual block described in paper"""
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(layer_input)
 			if normalization:
@@ -432,7 +433,7 @@ class PixelDA(object):
 
 	def build_classifier(self):
 
-		def clf_layer(layer_input, filters, f_size=4, normalization=True):
+		def clf_layer(layer_input, filters, f_size=4, normalization=self.normalize_C):
 			"""Classifier layer"""
 			d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
 			d = LeakyReLU(alpha=0.2)(d)
@@ -842,21 +843,23 @@ class PixelDA(object):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
-	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_14/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_7/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset()
+	# gan.load_dataset()
 	
-	###### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
+	### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
+	# gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
-	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14_1", save_weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
+	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14_1", save_weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
+	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp5_1", save_weights_path='../Weights/WGAN_GP/Exp5_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
 	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
 	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
@@ -876,11 +879,11 @@ if __name__ == '__main__':
 	#      Good example
 	#########################
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_11/Exp0.h5')
-	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4_13/debug_sobol.npy", 
+	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4_14_1/debug_linear.npy", 
 	# 	sample_size=100, 
-	# 	noise_number=256, 
-	# 	use_sobol=True, 
-	# 	use_linear=False, 
+	# 	noise_number=512, 
+	# 	use_sobol=False, 
+	# 	use_linear=True, 
 	# 	use_sphere=False,
 	# 	use_uniform_linear=False,
 	# 	use_zeros=False,
