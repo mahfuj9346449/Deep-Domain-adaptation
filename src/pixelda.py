@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import scipy
-import os
+import os, sys
 # import keras
 # import tensorflow as tf
 # import keras.backend.tensorflow_backend as KTF
@@ -21,10 +21,13 @@ if args.gpu == "simple":
 	print("="*50)
 	if machine_name == "lulin-QX-350-Series":
 		os.environ["CUDA_VISIBLE_DEVICES"]="0"
+		sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 	else:
 		os.environ["CUDA_VISIBLE_DEVICES"]="1"
+		sys.path.append("/home/lulin/na4/my_packages")
+
 		import matplotlib as mpl 
-		mpl.use("Agg")
+		# mpl.use("Agg")
 		# Qt_XKB_CONFIG_ROOT (add path ?)
 
 	import keras
@@ -71,7 +74,7 @@ from keras.optimizers import Adam, SGD, RMSprop
 from keras.utils import to_categorical
 import datetime
 import matplotlib.pyplot as plt
-import sys
+
 from data_processing import DataLoader
 import numpy as np
 from keras.utils import plot_model
