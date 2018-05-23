@@ -84,11 +84,25 @@ class DataLoader():
 		print ("+ Done.")
 
 
-	def load_data(self, domain, batch_size=1):
+	def load_data(self, domain="", batch_size=1, return_mask=False):
 
 		X = self.mnist_X if domain == 'A' else self.mnistm_X
 		y = self.mnist_y if domain == 'A' else self.mnistm_y
 
 		idx = np.random.choice(list(range(len(X))), size=batch_size, replace=False)
+		
+		images = X[idx]
+		labels = y[idx]
 
-		return X[idx], y[idx]
+		if return_mask:
+			if domain == "A":
+				masks = (images+1)/2
+				masks = masks[:,:,:,0][:,:,:,np.newaxis]
+				return images, labels, masks
+			elif domain == "B":
+				### Here we use the fact that MNIST-M has the same semantic segmentation form as MNIST
+				masks = (self.mnist_X[idx]+1)/2 # shape = (batch_size, 32, 32, 3)
+				masks = masks[:,:,:,0][:,:,:,np.newaxis] # shape = (batch_size, 32, 32, 1)
+				return images, labels, masks
+
+		return images, labels

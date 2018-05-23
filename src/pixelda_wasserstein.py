@@ -167,15 +167,26 @@ class PixelDA(object):
 
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
-	def __init__(self, noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, **kwargs):
+	def __init__(self, noise_size=(100,), 
+		use_PatchGAN=False, 
+		use_Wasserstein=True, 
+		batch_size=64,
+		**kwargs):
 		# Input shape
-		self.img_rows = 32
-		self.img_cols = 32
-		self.channels = 3
-		self.img_shape = (self.img_rows, self.img_cols, self.channels)
-		self.num_classes = 10
-		self.noise_size = noise_size #(100,)
+		self.dataset_name = "MNIST" # "CT"
 
+		if self.dataset_name == "MNIST":
+			self.img_shape = (32, 32, 3)
+			self.num_classes = 10
+		elif self.dataset_name == "CT":
+			self.img_shape = (64, 64, 1)
+		else:
+			assert 1==2, "Only support two datasets for now. ('CT', 'MNIST')"
+
+		self.img_rows, self.img_cols, self.channels = self.img_shape
+
+		self.noise_size = noise_size #(100,)
+		self.batch_size = batch_size
 		# Loss weights
 		self.lambda_adv = 7#10 # 7
 		self.lambda_clf = 1
@@ -488,13 +499,13 @@ class PixelDA(object):
 		except:
 			pass
 		
-	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
+	def train(self, epochs, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 		self.save_config(save2path=os.path.join(dirpath, "config.dill"), verbose=True)
 
-		half_batch = batch_size #int(batch_size / 2) ### TODO
+		#half_batch = batch_size #int(batch_size / 2) ### TODO
 		# half_batch = int(batch_size / 2)
 		
 		# Classification accuracy on 100 last batches of domain B
@@ -513,26 +524,26 @@ class PixelDA(object):
 			
 			for _ in range(self.critic_steps):
 
-				imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=half_batch)
-				imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=half_batch)
+				imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
+				imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=self.batch_size)
 				
 				
-				noise_prior = np.random.normal(0,1, (half_batch, self.noise_size[0])) 
+				noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
 				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) # TODO 6/5/2018
 				
 				# Translate images from domain A to domain B
 				fake_B = self.generator.predict([imgs_A, noise_prior])
 				if self.use_PatchGAN:
-					valid = np.ones((half_batch,) + self.disc_patch)
-					fake = np.zeros((half_batch,) + self.disc_patch)
+					valid = np.ones((self.batch_size,) + self.disc_patch)
+					fake = np.zeros((self.batch_size,) + self.disc_patch)
 				else:
 					if self.use_Wasserstein:
-						valid = np.ones((half_batch, 1))
+						valid = np.ones((self.batch_size, 1))
 						fake = - valid #np.ones((half_batch, 1)) # = - valid ? TODO
-						dummy_y = np.zeros((batch_size, 1)) # NEW
+						dummy_y = np.zeros((self.batch_size, 1)) # NEW
 					else:
-						valid = np.ones((half_batch, 1))
-						fake = np.zeros((half_batch, 1))
+						valid = np.ones((self.batch_size, 1))
+						fake = np.zeros((self.batch_size, 1))
 				
 				
 				
@@ -555,20 +566,20 @@ class PixelDA(object):
 			# --------------------------------
 
 			# Sample a batch of images from both domains
-			imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=batch_size)
-			imgs_B, labels_B = self.data_loader.load_data(domain="B", batch_size=batch_size)
+			imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
+			imgs_B, labels_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size)
 
 			# One-hot encoding of labels
 			labels_A = to_categorical(labels_A, num_classes=self.num_classes)
 
 			# The generators want the discriminators to label the translated images as real
 			if self.use_PatchGAN:
-				valid = np.ones((batch_size,) + self.disc_patch)
+				valid = np.ones((self.batch_size,) + self.disc_patch)
 			else:
-				valid = np.ones((batch_size, 1))
+				valid = np.ones((self.batch_size, 1))
 
 			#
-			noise_prior = np.random.normal(0,1, (batch_size, self.noise_size[0])) 
+			noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
 			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) # TODO 6/5/2018
 
 			# Train the generator and classifier
@@ -620,6 +631,7 @@ class PixelDA(object):
 				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
 					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
 
+				message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
 
 				if test_mean_acc > best_test_cls_acc:
 					second_best_cls_acc = best_test_cls_acc
@@ -628,9 +640,8 @@ class PixelDA(object):
 					if save_model:
 						self.combined.save(save_weights_path)
 					else:
-						self.combined.save_weights(save_weights_path)	
-					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (latest)"
-						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+						self.combined.save_weights(save_weights_path)
+					message += "  (best)"
 					 
 				elif test_mean_acc > second_best_cls_acc:
 					second_best_cls_acc = test_mean_acc
@@ -639,15 +650,11 @@ class PixelDA(object):
 						self.combined.save(save_weights_path)
 					else:
 						self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
-
-
-					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)"
-						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					message += "  (second best)"
 
 				else:
-
-					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)]"
-						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					pass
+				print(message)
 
 
 			# If at save interval => save generated image samples
@@ -691,6 +698,73 @@ class PixelDA(object):
 				cnt += 1
 		fig.savefig(os.path.join(save2dir, "{}.png".format(epoch)))
 		plt.close()
+
+	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
+		if save_weights_path is not None:
+			dirpath = "/".join(save_weights_path.split("/")[:-1])
+			if not os.path.exists(dirpath):
+				os.makedirs(dirpath)
+		optimizer = Adam(0.000001, beta_1=0.0, beta_2=0.9)
+		
+		# Input noise
+		noise = Input(shape=self.noise_size, name='noise_input_seg')
+		img_A = Input(shape=self.img_shape, name='source_image_seg')
+		# Translate images from domain A to domain B
+		fake_B = self.generator([img_A, noise])
+
+		# Segment the translated image
+		mask_pred = self.seg(fake_B)
+
+		self.generator.trainable = False
+
+		self.segmentation_model = Model(inputs=[img_A, noise], outputs=[mask_pred])
+		self.segmentation_model.compile(loss=dice_coef_loss, optimizer=optimizer, metrics=["acc", dice_coef])
+
+		self.segmentation_model.name = "U-net (freeze Generator)"
+		self.segmentation_model.summary()
+
+		best_test_dice = 0.0
+		second_best_test_dice = -1.0
+		collections = []
+		for e in range(iterations):
+			noise = (2*np.random.random((batch_size, self.noise_size[0]))-1)*noise_range
+			
+			images_A, _, mask_A = self.data_loader.load_data(domain="A", batch_size=batch_size, return_mask=True)
+
+			s_loss = self.segmentation_model.train_on_batch([images_A, noise], mask_A)
+
+
+			if e%100 == 0:
+				images_B, _, mask_B = self.data_loader.load_data(domain="B", batch_size=batch_size, return_mask=True)
+
+				pred_mask_B = self.seg.predict(images_B)
+				_, current_test_dice = dice_predict(mask_B, pred_mask_B)
+				
+				if len(collections)>=100:
+					collections.pop(0)
+				collections.append(current_test_dice)
+				mean_dice = np.mean(collections)
+				message = "{} dice loss: {:.3f}; acc: {:.5f}; mean dice (test): {:.3f}".format(e, 100*s_loss[0], s_loss[1], 100*mean_dice)
+
+				if mean_dice>best_test_dice:
+					best_test_dice = mean_dice
+					message += "  (best)"
+					if save_weights_path is not None:
+						self.segmentation_model.save_weights(save_weights_path)
+
+				elif mean_dice> second_best_test_dice:
+					second_best_test_dice = mean_dice
+					message += "  (second best)"
+					if save_weights_path is not None:
+						self.segmentation_model.save_weights(save_weights_path[:-3]+"_bis.h5")
+				else:
+					pass
+				print(message)
+				
+
+
+
+		return
 
 
 	def deploy_transform(self, save2file="../domain_adapted/generated.npy", stop_after=None):
@@ -748,7 +822,9 @@ class PixelDA(object):
 
 		# 	collections.append(adaptaed_images)
 		collections = []
-		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
+		# imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=sample_size)
+		imgs_A = np.load("/home/lulin/na4/src/output/output13_32x32/test/liver_masks.npy")[100:100+sample_size]
+		imgs_A = np.repeat(imgs_A, 3, axis=-1)
 
 		for i in tqdm(range(sample_size)):
 			if use_sobol:
@@ -843,7 +919,7 @@ class PixelDA(object):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
-	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_7/config.dill")
+	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_14_1/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	# gan.load_dataset()
@@ -853,8 +929,9 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
-	
+	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
+	gan.deploy_debug(save2file="../domain_adapted/Others/Liver/mask.npy", sample_size=100, noise_number=256, seed = 17)
+
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')

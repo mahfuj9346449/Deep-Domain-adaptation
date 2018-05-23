@@ -92,6 +92,7 @@ except:
 from tqdm import tqdm
 import dill
 from unet.U_net import UNet
+from unet.CT_generator import MyDataset
 
 
 def wasserstein_loss(y_true, y_pred):
@@ -207,17 +208,28 @@ class PixelDA(object):
 
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
-	def __init__(self, noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, **kwargs):
+	def __init__(self, noise_size=(100,), 
+		use_PatchGAN=False, 
+		use_Wasserstein=True, 
+		batch_size=64,
+		**kwargs):
 		# Input shape
-		self.img_rows = 32
-		self.img_cols = 32
-		self.channels = 3
-		self.img_shape = (self.img_rows, self.img_cols, self.channels)
-		self.num_classes = 10
-		self.noise_size = noise_size #(100,)
+		self.dataset_name = "MNIST" # "CT"
 
+		if self.dataset_name == "MNIST":
+			self.img_shape = (32, 32, 3)
+			self.num_classes = 10
+		elif self.dataset_name == "CT":
+			self.img_shape = (64, 64, 1)
+		else:
+			assert 1==2, "Only support two datasets for now. ('CT', 'MNIST')"
+
+		self.img_rows, self.img_cols, self.channels = self.img_shape
+
+		self.noise_size = noise_size #(100,)
+		self.batch_size = batch_size
 		# Loss weights
-		self.lambda_adv = 7#10 # 7
+		self.lambda_adv = 17#20#7
 		self.lambda_seg = 1
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 # NEW TODO #64 11/5/2018
@@ -225,12 +237,14 @@ class PixelDA(object):
 
 		self.normalize_G = False
 		self.normalize_D = False
-		self.normalize_S = True
+		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
 		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
+
+
 		if self.use_PatchGAN:
 			# Calculate output shape of D (PatchGAN)
 			patch = int(self.img_rows / 2**4)
@@ -397,8 +411,20 @@ class PixelDA(object):
 
 
 	def load_dataset(self):
-		# Configure MNIST and MNIST-M data loader
-		self.data_loader = DataLoader(img_res=(self.img_rows, self.img_cols))
+		if self.dataset_name == "MNIST":
+			# Configure MNIST and MNIST-M data loader
+			self.data_loader = DataLoader(img_res=(self.img_rows, self.img_cols))
+		elif self.dataset_name == "CT":
+			bodys_filepath_A = "/home/lulin/na4/src/output/output14_64x64/train/bodys.npy"
+			masks_filepath_A = "/home/lulin/na4/src/output/output14_64x64/train/liver_masks.npy"
+			self.Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], batch_size=self.batch_size, augment=False, seed=17, domain="A")
+
+			bodys_filepath_B = "/home/lulin/na4/src/output/output14_x_64x64/train/bodys.npy"
+			masks_filepath_B = "/home/lulin/na4/src/output/output14_x_64x64/train/liver_masks.npy"
+			self.Dataset_B = MyDataset(paths=[bodys_filepath_B, masks_filepath_B], batch_size=self.batch_size, augment=False, seed=17, domain="B")
+		else:
+			pass
+		
 
 	def build_generator(self):
 		"""Resnet Generator"""
@@ -470,7 +496,8 @@ class PixelDA(object):
 		return Model(img, validity)
 
 	def build_segmenter(self):
-		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=32, upconv=False, batchnorm=False)
+		
+		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=32, upconv=False, batchnorm=self.normalize_S)
 		# def seg_layer(layer_input, filters, f_size=4, normalization=self.normalize_S):
 		# 	"""Segmenter layer"""
 		# 	d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
@@ -524,15 +551,12 @@ class PixelDA(object):
 		except:
 			pass
 		
-	def train(self, epochs, batch_size=32, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
+	def train(self, epochs, sample_interval=50, save_sample2dir="../samples/exp0", save_weights_path='../Weights/all_weights.h5', save_model=False):
 		dirpath = "/".join(save_weights_path.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 		self.save_config(save2path=os.path.join(dirpath, "config.dill"), verbose=True)
 
-		half_batch = batch_size #int(batch_size / 2) ### TODO
-		# half_batch = int(batch_size / 2)
-		
 		# segmentation accuracy on 100 last batches of domain B
 		test_accs = []
 
@@ -549,26 +573,29 @@ class PixelDA(object):
 			
 			for _ in range(self.critic_steps):
 
-				imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=half_batch)
-				imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=half_batch)
+				if self.dataset_name == "MNIST":
+					imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
+					imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=self.batch_size)	
+				elif self.dataset_name == "CT":
+					imgs_A, _ = self.Dataset_A.next()
+					imgs_B, _ = self.Dataset_B.next()
 				
-				
-				noise_prior = np.random.normal(0,1, (half_batch, self.noise_size[0])) 
+				noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
 				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) # TODO 6/5/2018
 				
 				# Translate images from domain A to domain B
 				fake_B = self.generator.predict([imgs_A, noise_prior])
 				if self.use_PatchGAN:
-					valid = np.ones((half_batch,) + self.disc_patch)
-					fake = np.zeros((half_batch,) + self.disc_patch)
+					valid = np.ones((self.batch_size,) + self.disc_patch)
+					fake = np.zeros((self.batch_size,) + self.disc_patch)
 				else:
 					if self.use_Wasserstein:
-						valid = np.ones((half_batch, 1))
+						valid = np.ones((self.batch_size, 1))
 						fake = - valid #np.ones((half_batch, 1)) # = - valid ? TODO
-						dummy_y = np.zeros((batch_size, 1)) # NEW
+						dummy_y = np.zeros((self.batch_size, 1)) # NEW
 					else:
-						valid = np.ones((half_batch, 1))
-						fake = np.zeros((half_batch, 1))
+						valid = np.ones((self.batch_size, 1))
+						fake = np.zeros((self.batch_size, 1))
 				
 				
 				
@@ -589,10 +616,18 @@ class PixelDA(object):
 			# --------------------------------
 			#  Train Generator and Segmenter
 			# --------------------------------
-
 			# Sample a batch of images from both domains
-			imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=batch_size)
-			imgs_B, labels_B = self.data_loader.load_data(domain="B", batch_size=batch_size)
+
+			if self.dataset_name == "MNIST":
+				imgs_A, labels_A, masks_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size, return_mask=True)
+				imgs_B, labels_B, masks_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size, return_mask=True)
+					
+			elif self.dataset_name == "CT":
+				imgs_A, masks_A = self.Dataset_A.next()
+				imgs_B, masks_B = self.Dataset_B.next()
+			else:
+				pass
+
 
 			# One-hot encoding of labels
 			# labels_A = to_categorical(labels_A, num_classes=self.num_classes)
@@ -600,17 +635,23 @@ class PixelDA(object):
 
 			# The generators want the discriminators to label the translated images as real
 			if self.use_PatchGAN:
-				valid = np.ones((batch_size,) + self.disc_patch)
+				valid = np.ones((self.batch_size,) + self.disc_patch)
 			else:
-				valid = np.ones((batch_size, 1))
+				valid = np.ones((self.batch_size, 1))
 
 			#
-			noise_prior = np.random.normal(0,1, (batch_size, self.noise_size[0])) 
+			noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
 			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) # TODO 6/5/2018
 
 			# Train the generator and Segmenter
-			g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, imgs_A]) # replace "labels_A" by "imgs_A"
-
+			if self.dataset_name == "MNIST":
+				# mnist_mask = (imgs_A+1)/2
+				# mnist_mask = mnist_mask[:,:,:,0][:,:,:,np.newaxis]
+				g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) # TODO only for MNIST: replace "labels_A" by "mnist_mask"
+			elif self.dataset_name == "CT":
+				pass
+			else:
+				pass
 
 			#-----------------------
 			# Evaluation (domain B)
@@ -618,7 +659,15 @@ class PixelDA(object):
 
 			pred_B = self.seg.predict(imgs_B)
 			# test_acc = np.mean(np.argmax(pred_B, axis=1) == labels_B)
-			test_acc = dice_predict(imgs_A, pred_B)
+			if self.dataset_name == "MNIST":
+				# print(pred_B.shape)
+				_, test_acc = dice_predict(masks_B, pred_B) # TODO only for MNIST: replace "labels_A" by "imgs_A"
+				
+			elif self.dataset_name == "CT":
+				_, test_acc = dice_predict(masks_B, pred_B)
+			else:
+				pass
+			
 			
 			# Add accuracy to list of last 100 accuracy measurements
 			test_accs.append(test_acc)
@@ -659,6 +708,7 @@ class PixelDA(object):
 				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
 					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
 
+				message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
 
 				if test_mean_acc > best_test_cls_acc:
 					second_best_cls_acc = best_test_cls_acc
@@ -667,9 +717,8 @@ class PixelDA(object):
 					if save_model:
 						self.combined.save(save_weights_path)
 					else:
-						self.combined.save_weights(save_weights_path)	
-					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (latest)"
-						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+						self.combined.save_weights(save_weights_path)
+					message += "  (best)"
 					 
 				elif test_mean_acc > second_best_cls_acc:
 					second_best_cls_acc = test_mean_acc
@@ -678,15 +727,11 @@ class PixelDA(object):
 						self.combined.save(save_weights_path)
 					else:
 						self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
-
-
-					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)] (before latest)"
-						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					message += "  (second best)"
 
 				else:
-
-					print("{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_acc: {:.2f}% ({:.2f}%)]"
-						.format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc))
+					pass
+				print(message)
 
 
 			# If at save interval => save generated image samples
@@ -700,8 +745,13 @@ class PixelDA(object):
 			os.makedirs(save2dir)
 
 		r, c = 5, 10
-
-		imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)
+		if self.dataset_name == "MNIST":
+			imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)	
+		elif self.dataset_name == "CT":
+			raise ValueError("Not implemented error.")
+		else:
+			pass
+		
 
 		n_sample = imgs_A.shape[0]
 
@@ -730,6 +780,73 @@ class PixelDA(object):
 				cnt += 1
 		fig.savefig(os.path.join(save2dir, "{}.png".format(epoch)))
 		plt.close()
+
+	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
+		if save_weights_path is not None:
+			dirpath = "/".join(save_weights_path.split("/")[:-1])
+			if not os.path.exists(dirpath):
+				os.makedirs(dirpath)
+		optimizer = Adam(0.000001, beta_1=0.0, beta_2=0.9)
+		
+		# Input noise
+		noise = Input(shape=self.noise_size, name='noise_input_seg')
+		img_A = Input(shape=self.img_shape, name='source_image_seg')
+		# Translate images from domain A to domain B
+		fake_B = self.generator([img_A, noise])
+
+		# Segment the translated image
+		mask_pred = self.seg(fake_B)
+
+		self.generator.trainable = False
+
+		self.segmentation_model = Model(inputs=[img_A, noise], outputs=[mask_pred])
+		self.segmentation_model.compile(loss=dice_coef_loss, optimizer=optimizer, metrics=["acc", dice_coef])
+
+		self.segmentation_model.name = "U-net (freeze Generator)"
+		self.segmentation_model.summary()
+
+		best_test_dice = 0.0
+		second_best_test_dice = -1.0
+		collections = []
+		for e in range(iterations):
+			noise = (2*np.random.random((batch_size, self.noise_size[0]))-1)*noise_range
+			
+			images_A, _, mask_A = self.data_loader.load_data(domain="A", batch_size=batch_size, return_mask=True)
+
+			s_loss = self.segmentation_model.train_on_batch([images_A, noise], mask_A)
+
+
+			if e%100 == 0:
+				images_B, _, mask_B = self.data_loader.load_data(domain="B", batch_size=batch_size, return_mask=True)
+
+				pred_mask_B = self.seg.predict(images_B)
+				_, current_test_dice = dice_predict(mask_B, pred_mask_B)
+				
+				if len(collections)>=100:
+					collections.pop(0)
+				collections.append(current_test_dice)
+				mean_dice = np.mean(collections)
+				message = "{} dice loss: {:.3f}; acc: {:.5f}; mean dice (test): {:.3f}".format(e, 100*s_loss[0], s_loss[1], 100*mean_dice)
+
+				if mean_dice>best_test_dice:
+					best_test_dice = mean_dice
+					message += "  (best)"
+					if save_weights_path is not None:
+						self.segmentation_model.save_weights(save_weights_path)
+
+				elif mean_dice> second_best_test_dice:
+					second_best_test_dice = mean_dice
+					message += "  (second best)"
+					if save_weights_path is not None:
+						self.segmentation_model.save_weights(save_weights_path[:-3]+"_bis.h5")
+				else:
+					pass
+				print(message)
+				
+
+
+
+		return
 
 
 	def deploy_transform(self, save2file="../domain_adapted/generated.npy", stop_after=None):
@@ -881,30 +998,25 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64)
 	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_7/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset()
 	
-	### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
-	# gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
+	
+	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp5/Exp0.h5')
+	# import ipdb; ipdb.set_trace()
+	# gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/MNIST_SEG/Exp5", save_weights_path='../Weights/MNIST_SEG/Exp5/Exp0.h5')
+	gan.train_segmenter(iterations=100000, batch_size=64, noise_range=1, save_weights_path="../Weights/MNIST_SEG/Exp5_seg/Exp0.h5")
+
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14_1", save_weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
-	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp5_1", save_weights_path='../Weights/WGAN_GP/Exp5_1/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/exp6.h5')
-	# gan.train(epochs=2000, batch_size=32, sample_interval=100)
-	# gan.train(epochs=40000, batch_size=32, sample_interval=100, save_sample2dir="../samples/exp9", save_weights_path='../Weights/exp9.h5')
-	# gan.train(epochs=10000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_no_batchnorm/exp0.h5', save_model=False)
-	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_rand_noise_100/exp0", save_weights_path='../Weights/Exp0_rand_noise_100/exp0.h5', save_model=False)
-	# gan.train(epochs=20000, batch_size=32, sample_interval=100, save_sample2dir="../samples/Exp0_gaussian_noise_100_no_batchnorm/exp0", save_weights_path='../Weights/Exp0_gaussian_noise_100_no_batchnorm/exp0.h5', save_model=False)
+	
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4/debug_sobol.npy", sample_size=100, noise_number=256, seed = 17)
