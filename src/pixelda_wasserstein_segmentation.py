@@ -82,7 +82,7 @@ from keras import backend as K
 from time import time
 from functools import partial
 from keras.utils import plot_model
-
+from keras.initializers import he_normal, he_uniform
 try:
 	from HPOlib_lu.Quasi_Monte_Carlo.sobol_lib import i4_sobol_generate
 except:
@@ -214,13 +214,13 @@ class PixelDA(object):
 		batch_size=64,
 		**kwargs):
 		# Input shape
-		self.dataset_name = "MNIST" # "CT"
+		self.dataset_name = "CT" #"MNIST" # "CT"
 
 		if self.dataset_name == "MNIST":
 			self.img_shape = (32, 32, 3)
 			self.num_classes = 10
 		elif self.dataset_name == "CT":
-			self.img_shape = (64, 64, 1)
+			self.img_shape = (128, 128, 1)
 		else:
 			assert 1==2, "Only support two datasets for now. ('CT', 'MNIST')"
 
@@ -232,7 +232,7 @@ class PixelDA(object):
 		self.lambda_adv = 17#20#7
 		self.lambda_seg = 1
 		# Number of filters in first layer of discriminator and Segmenter
-		self.df = 64 # NEW TODO #64 11/5/2018
+		self.df = 64 
 		self.sf = 64
 
 		self.normalize_G = False
@@ -243,7 +243,8 @@ class PixelDA(object):
 		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
-
+		self.use_He_initialization = True
+		self.my_initializer = lambda :he_normal() if self.use_He_initialization else "glorot_uniform" # TODO
 
 		if self.use_PatchGAN:
 			# Calculate output shape of D (PatchGAN)
@@ -410,17 +411,17 @@ class PixelDA(object):
 
 
 
-	def load_dataset(self):
+	def load_dataset(self, domain_A_folder="output8", domain_B_folder="output5_x_128"):
 		if self.dataset_name == "MNIST":
 			# Configure MNIST and MNIST-M data loader
 			self.data_loader = DataLoader(img_res=(self.img_rows, self.img_cols))
 		elif self.dataset_name == "CT":
-			bodys_filepath_A = "/home/lulin/na4/src/output/output14_64x64/train/bodys.npy"
-			masks_filepath_A = "/home/lulin/na4/src/output/output14_64x64/train/liver_masks.npy"
+			bodys_filepath_A = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_A_folder)
+			masks_filepath_A = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_A_folder)
 			self.Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], batch_size=self.batch_size, augment=False, seed=17, domain="A")
 
-			bodys_filepath_B = "/home/lulin/na4/src/output/output14_x_64x64/train/bodys.npy"
-			masks_filepath_B = "/home/lulin/na4/src/output/output14_x_64x64/train/liver_masks.npy"
+			bodys_filepath_B = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_B_folder)
+			masks_filepath_B = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_B_folder)
 			self.Dataset_B = MyDataset(paths=[bodys_filepath_B, masks_filepath_B], batch_size=self.batch_size, augment=False, seed=17, domain="B")
 		else:
 			pass
@@ -431,15 +432,15 @@ class PixelDA(object):
 
 		def residual_block(layer_input, normalization=self.normalize_G):
 			"""Residual block described in paper"""
-			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(layer_input)
+			d = Conv2D(64, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer)(layer_input)
 			if normalization:
 				d = InstanceNormalization()(d)
-				# d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
+				# d = BatchNormalization(momentum=0.8)(d) #  6/5/2018
 			d = Activation('relu')(d)
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(d)
 			if normalization:
 				d = InstanceNormalization()(d)
-				# d = BatchNormalization(momentum=0.8)(d) # TODO 6/5/2018
+				# d = BatchNormalization(momentum=0.8)(d) #  6/5/2018
 			d = Add()([d, layer_input])
 			return d
 
@@ -448,13 +449,13 @@ class PixelDA(object):
 
 		## Noise input
 		noise = Input(shape=self.noise_size, name='noise_input')
-		noise_layer = Dense(1024, activation="relu")(noise)
+		noise_layer = Dense(1024, activation="relu", kernel_initializer=self.my_initializer)(noise)
 		noise_layer = Reshape((self.img_rows,self.img_cols, 1))(noise_layer)
 		conditioned_img = keras.layers.concatenate([img, noise_layer])
 		# keras.layers.concatenate
 
 		# l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(img)
-		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(conditioned_img)
+		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer)(conditioned_img)
 		
 
 		# Propogate signal through residual blocks
@@ -488,7 +489,7 @@ class PixelDA(object):
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 		else:
 			if self.use_Wasserstein: # NEW 8/5/2018
-				validity = Dense(1, activation=None)(Flatten()(d4)) # he_normal ?? TODO
+				validity = Dense(1, activation=None)(Flatten()(d4)) # he_normal ?? 
 			else:
 				validity = Dense(1, activation='sigmoid')(Flatten()(d4))
 			
@@ -496,23 +497,9 @@ class PixelDA(object):
 		return Model(img, validity)
 
 	def build_segmenter(self):
-		
+		"""Segmenter layer"""
 		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=32, upconv=False, batchnorm=self.normalize_S)
-		# def seg_layer(layer_input, filters, f_size=4, normalization=self.normalize_S):
-		# 	"""Segmenter layer"""
-		# 	d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
-		# 	d = LeakyReLU(alpha=0.2)(d)
-		# 	if normalization:
-		# 		d = InstanceNormalization()(d)
-		# 	return d
-		# img = Input(shape=self.img_shape, name='image_input')
-		# c1 = seg_layer(img, self.sf, normalization=False)
-		# c2 = seg_layer(c1, self.sf*2)
-		# c3 = seg_layer(c2, self.sf*4)
-		# c4 = seg_layer(c3, self.sf*8)
-		# c5 = seg_layer(c4, self.sf*8)
-		# mask_pred = Dense(self.num_classes, activation='softmax')(Flatten()(c5))
-		# return Model(img, mask_pred)
+		
 		return model
 
 	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5"):
@@ -581,7 +568,7 @@ class PixelDA(object):
 					imgs_B, _ = self.Dataset_B.next()
 				
 				noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
-				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) # TODO 6/5/2018
+				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) #  6/5/2018
 				
 				# Translate images from domain A to domain B
 				fake_B = self.generator.predict([imgs_A, noise_prior])
@@ -591,7 +578,7 @@ class PixelDA(object):
 				else:
 					if self.use_Wasserstein:
 						valid = np.ones((self.batch_size, 1))
-						fake = - valid #np.ones((half_batch, 1)) # = - valid ? TODO
+						fake = - valid #np.ones((half_batch, 1)) # = - valid ? 
 						dummy_y = np.zeros((self.batch_size, 1)) # NEW
 					else:
 						valid = np.ones((self.batch_size, 1))
@@ -619,8 +606,8 @@ class PixelDA(object):
 			# Sample a batch of images from both domains
 
 			if self.dataset_name == "MNIST":
-				imgs_A, labels_A, masks_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size, return_mask=True)
-				imgs_B, labels_B, masks_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size, return_mask=True)
+				imgs_A, _, masks_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size, return_mask=True)
+				imgs_B, _, masks_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size, return_mask=True)
 					
 			elif self.dataset_name == "CT":
 				imgs_A, masks_A = self.Dataset_A.next()
@@ -641,17 +628,11 @@ class PixelDA(object):
 
 			#
 			noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
-			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) # TODO 6/5/2018
+			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) #  6/5/2018
 
 			# Train the generator and Segmenter
-			if self.dataset_name == "MNIST":
-				# mnist_mask = (imgs_A+1)/2
-				# mnist_mask = mnist_mask[:,:,:,0][:,:,:,np.newaxis]
-				g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) # TODO only for MNIST: replace "labels_A" by "mnist_mask"
-			elif self.dataset_name == "CT":
-				pass
-			else:
-				pass
+			g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) 
+
 
 			#-----------------------
 			# Evaluation (domain B)
@@ -659,27 +640,14 @@ class PixelDA(object):
 
 			pred_B = self.seg.predict(imgs_B)
 			# test_acc = np.mean(np.argmax(pred_B, axis=1) == labels_B)
-			if self.dataset_name == "MNIST":
-				# print(pred_B.shape)
-				_, test_acc = dice_predict(masks_B, pred_B) # TODO only for MNIST: replace "labels_A" by "imgs_A"
-				
-			elif self.dataset_name == "CT":
-				_, test_acc = dice_predict(masks_B, pred_B)
-			else:
-				pass
 			
-			
+			_, test_acc = dice_predict(masks_B, pred_B) # TODO only for MNIST: replace "labels_A" by "imgs_A"
+	
 			# Add accuracy to list of last 100 accuracy measurements
 			test_accs.append(test_acc)
 			if len(test_accs) > 100:
 				test_accs.pop(0)
 
-
-			# Plot the progress
-			# print ( "%d : [D - loss: %.5f, acc: %3d%%], [G - loss: %.5f], [clf - loss: %.5f, acc: %3d%%, test_acc: %3d%% (%3d%%)]" % \
-			# 								(epoch, d_loss[0], 100*float(d_loss[1]),
-			# 								g_loss[1], g_loss[2], 100*float(g_loss[-1]),
-			# 								100*float(test_acc), 100*float(np.mean(test_accs))))
 			
 			if epoch % 10 == 0:
 				
@@ -744,16 +712,20 @@ class PixelDA(object):
 		if not os.path.exists(save2dir):
 			os.makedirs(save2dir)
 
-		r, c = 5, 10
+		
 		if self.dataset_name == "MNIST":
-			imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)	
+			r, c = 5, 10
+			imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=c)
 		elif self.dataset_name == "CT":
-			raise ValueError("Not implemented error.")
+			r, c = 2, 5
+			imgs_A, _ = self.Dataset_A.next()
+			imgs_A = imgs_A[:c]
+			# raise ValueError("Not implemented error.")
 		else:
 			pass
 		
 
-		n_sample = imgs_A.shape[0]
+		n_sample = imgs_A.shape[0] # == c
 
 		gen_imgs = imgs_A
 		for i in range(r-1):
@@ -765,8 +737,10 @@ class PixelDA(object):
 			fake_B = self.generator.predict([imgs_A, noise_prior])
 			gen_imgs = np.concatenate([gen_imgs, fake_B])
 
-		# Rescale images to 0 - 1
-		gen_imgs = 0.5 * gen_imgs + 0.5
+		if self.dataset_name == "MNIST":
+			# Rescale images to 0 - 1
+			gen_imgs = 0.5 * gen_imgs + 0.5
+
 
 		#titles = ['Original', 'Translated']
 		fig, axs = plt.subplots(r, c, figsize=(2*c, 2*r))
@@ -998,23 +972,27 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64)
-	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_7/config.dill")
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)
+	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset()
-	
-	
-	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
+	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	
+	gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp1", save_weights_path='../Weights/CT2XperCT/Exp1/Exp0.h5')
+
+	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp5/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')
 	# import ipdb; ipdb.set_trace()
 	# gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/MNIST_SEG/Exp5", save_weights_path='../Weights/MNIST_SEG/Exp5/Exp0.h5')
-	gan.train_segmenter(iterations=100000, batch_size=64, noise_range=1, save_weights_path="../Weights/MNIST_SEG/Exp5_seg/Exp0.h5")
+	# gan.train_segmenter(iterations=100000, batch_size=64, noise_range=1, save_weights_path="../Weights/MNIST_SEG/Exp5_seg/Exp0.h5")
+	# gan.combined.save('../Weights/MNIST_SEG/Exp1/Exp0_model.h5')
 
+
+	####### MNIST-M Classification (semi-supervised)
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	
 	# gan.deploy_transform(stop_after=200)
