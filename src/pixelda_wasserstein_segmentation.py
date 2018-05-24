@@ -229,7 +229,7 @@ class PixelDA(object):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights
-		self.lambda_adv = 17#20#7
+		self.lambda_adv = 10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 
@@ -240,10 +240,10 @@ class PixelDA(object):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 6#17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
-		self.use_He_initialization = True
+		self.use_He_initialization = False
 		self.my_initializer = lambda :he_normal() if self.use_He_initialization else "glorot_uniform" # TODO
 
 		if self.use_PatchGAN:
@@ -329,7 +329,8 @@ class PixelDA(object):
 	def build_all_model(self):
 
 		# optimizer = Adam(0.0002, 0.5)
-		optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9)
+		optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9) # Exp4 
+		# optimizer = Adam(0.0001, beta_1=0.0, beta_2=0.9) # Exp3 of CT2XperCT
 
 		
 
@@ -432,7 +433,7 @@ class PixelDA(object):
 
 		def residual_block(layer_input, normalization=self.normalize_G):
 			"""Residual block described in paper"""
-			d = Conv2D(64, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer)(layer_input)
+			d = Conv2D(64, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(layer_input)
 			if normalization:
 				d = InstanceNormalization()(d)
 				# d = BatchNormalization(momentum=0.8)(d) #  6/5/2018
@@ -449,13 +450,13 @@ class PixelDA(object):
 
 		## Noise input
 		noise = Input(shape=self.noise_size, name='noise_input')
-		noise_layer = Dense(1024, activation="relu", kernel_initializer=self.my_initializer)(noise)
+		noise_layer = Dense(self.img_rows*self.img_cols, activation="relu", kernel_initializer=self.my_initializer())(noise)
 		noise_layer = Reshape((self.img_rows,self.img_cols, 1))(noise_layer)
 		conditioned_img = keras.layers.concatenate([img, noise_layer])
 		# keras.layers.concatenate
 
 		# l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(img)
-		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer)(conditioned_img)
+		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer())(conditioned_img)
 		
 
 		# Propogate signal through residual blocks
@@ -641,7 +642,7 @@ class PixelDA(object):
 			pred_B = self.seg.predict(imgs_B)
 			# test_acc = np.mean(np.argmax(pred_B, axis=1) == labels_B)
 			
-			_, test_acc = dice_predict(masks_B, pred_B) # TODO only for MNIST: replace "labels_A" by "imgs_A"
+			_, test_acc = dice_predict(masks_B, pred_B) 
 	
 			# Add accuracy to list of last 100 accuracy measurements
 			test_accs.append(test_acc)
@@ -676,7 +677,7 @@ class PixelDA(object):
 				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
 					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
 
-				message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [clf - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
+				message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [seg - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
 
 				if test_mean_acc > best_test_cls_acc:
 					second_best_cls_acc = best_test_cls_acc
@@ -705,6 +706,10 @@ class PixelDA(object):
 			# If at save interval => save generated image samples
 			if epoch % sample_interval == 0:
 				self.sample_images(epoch, save2dir=save_sample2dir)
+
+
+		#### NEW 24/5/2018
+		self.combined.save_weights(save_weights_path[:-3]+"_final.h5")
 			
 				
 
@@ -735,13 +740,15 @@ class PixelDA(object):
 
 			# Translate images to the other domain
 			fake_B = self.generator.predict([imgs_A, noise_prior])
+			# print(fake_B.shape)
 			gen_imgs = np.concatenate([gen_imgs, fake_B])
 
 		if self.dataset_name == "MNIST":
 			# Rescale images to 0 - 1
 			gen_imgs = 0.5 * gen_imgs + 0.5
-
-
+		elif self.dataset_name == "CT":
+			gen_imgs = np.squeeze(gen_imgs)
+		# print(gen_imgs.shape)
 		#titles = ['Original', 'Translated']
 		fig, axs = plt.subplots(r, c, figsize=(2*c, 2*r))
 
@@ -972,7 +979,7 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64)#32
 	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
 	gan.build_all_model()
 	gan.summary()
@@ -980,9 +987,13 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	
-	gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp1", save_weights_path='../Weights/CT2XperCT/Exp1/Exp0.h5')
-
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
+	try:
+		save_weights_path = '../Weights/CT2XperCT/Exp4/Exp0.h5'
+		gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp4", save_weights_path=save_weights_path)
+	except KeyboardInterrupt:
+		gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		raise 
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')

@@ -55,7 +55,7 @@ class MyDataset(object):
 		self.seed = seed
 		self.domain = domain
 		# train_generator, train_steps 
-		print(self.paths)
+		
 		self.generator, self.steps = self.my_generator(paths=self.paths, batch_size=self.batch_size, augment=self.augment, seed=self.seed)
 
 	def my_generator(self, paths= ["", ""], batch_size=32, augment=False, seed=1):
