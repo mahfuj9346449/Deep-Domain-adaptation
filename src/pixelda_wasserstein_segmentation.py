@@ -222,7 +222,7 @@ class PixelDA(object):
 		elif self.dataset_name == "CT":
 			self.img_shape = (128, 128, 1)
 		else:
-			raise ValueError, "Only support two datasets for now. ('CT', 'MNIST')"
+			raise ValueError("Only support two datasets for now. ('CT', 'MNIST')")
 
 		self.img_rows, self.img_cols, self.channels = self.img_shape
 
@@ -740,8 +740,10 @@ class PixelDA(object):
 		elif self.dataset_name == "CT":
 			r, c = 2, 5
 			assert r == 2
-			imgs_A, _ = self.Dataset_A.next()
+			imgs_A, masks_A = self.Dataset_A.next()
 			imgs_A = imgs_A[:c]
+			masks_A = masks_A[:c]
+			masks_A = np.squeeze(masks_A)
 			# raise ValueError("Not implemented error.")
 		else:
 			pass
@@ -778,21 +780,22 @@ class PixelDA(object):
 				axs[i,j].imshow(gen_imgs[cnt], cmap="gray")
 				#axs[i, j].set_title(titles[i])
 				axs[i,j].axis('off')
-
-				############ TODO  ############
-				# visualize image with adaptive histogram
-				axs[i+1,j].imshow(apply_adapt_hist()(gen_imgs[cnt]), cmap="gray")
-				axs[i+1,j].axis('off')	
-				# mask image with ground truth mask
-				axs[i+2,j].imshow(apply_adapt_hist()(gen_imgs[cnt]), cmap="gray")
-				axes[i+2,j].imshow(img_liver_gt, aspect="equal", cmap="Blues", alpha=0.4)
-				axs[i+2,j].axis('off')
 				cnt += 1
+		for j in range(c):
+			############ TODO  ############
+			# visualize image with adaptive histogram
+			axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			axs[2,j].axis('off')	
+			# mask image with ground truth mask
+			axs[3,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
+			axs[3,j].axis('off')
+				
 		fig.savefig(os.path.join(save2dir, "{}.png".format(iterations)))
 		plt.close()
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		if save_weights_path is not None:
 			dirpath = "/".join(save_weights_path.split("/")[:-1])
 			if not os.path.exists(dirpath):
@@ -861,7 +864,7 @@ class PixelDA(object):
 
 
 	def deploy_transform(self, save2file="../domain_adapted/generated.npy", stop_after=None):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -898,7 +901,7 @@ class PixelDA(object):
 		use_uniform_linear=False, 
 		use_zeros=False,
 		seed = 17):
-	raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -975,7 +978,7 @@ class PixelDA(object):
 		print("+ All done.")
 
 	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 
@@ -993,7 +996,7 @@ class PixelDA(object):
 		print("+ All done.")
 
 	def deploy_cherry_pick(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo_cherry_picked.png", sample_size=25, noise_number=25, linspace_size=5.0):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 		assert noise_number == sample_size
@@ -1044,14 +1047,14 @@ if __name__ == '__main__':
 	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output16", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
 	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp4/Exp0.h5'
-		gan.train(iterations=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp4", save_weights_path=save_weights_path)
+		save_weights_path = '../Weights/CT2XperCT/Exp_test/Exp0.h5'
+		gan.train(iterations=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp_test", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		raise 

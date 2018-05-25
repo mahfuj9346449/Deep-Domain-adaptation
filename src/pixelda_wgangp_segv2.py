@@ -734,14 +734,14 @@ class PixelDA(_DLalgo):
 				axs[i+1,j].axis('off')	
 				# mask image with ground truth mask
 				axs[i+2,j].imshow(apply_adapt_hist()(gen_imgs[cnt]), cmap="gray")
-				axes[i+2,j].imshow(img_liver_gt, aspect="equal", cmap="Blues", alpha=0.4)
+				axs[i+2,j].imshow(img_liver_gt, aspect="equal", cmap="Blues", alpha=0.4)
 				axs[i+2,j].axis('off')
 				cnt += 1
 		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
 		plt.close()
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		if save_weights_path is not None:
 			dirpath = "/".join(save_weights_path.split("/")[:-1])
 			if not os.path.exists(dirpath):
@@ -810,7 +810,7 @@ class PixelDA(_DLalgo):
 
 
 	def deploy_transform(self, save2file="../domain_adapted/generated.npy", stop_after=None):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -847,7 +847,7 @@ class PixelDA(_DLalgo):
 		use_uniform_linear=False, 
 		use_zeros=False,
 		seed = 17):
-	raise ValueError, "Not modified yet."
+	raise ValueError("Not modified yet.")
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -897,7 +897,7 @@ class PixelDA(_DLalgo):
 		print("+ All done.")
 	
 	def deploy_segmentation(self, batch_size=32):
-		# raise ValueError, "Not modified yet."
+		# raise ValueError("Not modified yet.")
 		print("Predicting ... ")
 		if self.dataset_name == "MNIST":
 			pred_B = self.seg.predict(self.data_loader.mnistm_X, batch_size=batch_size)
@@ -925,7 +925,7 @@ class PixelDA(_DLalgo):
 		print("+ All done.")
 
 	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 
@@ -943,7 +943,7 @@ class PixelDA(_DLalgo):
 		print("+ All done.")
 
 	def deploy_cherry_pick(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo_cherry_picked.png", sample_size=25, noise_number=25, linspace_size=5.0):
-		raise ValueError, "Not modified yet."
+		raise ValueError("Not modified yet.")
 		collections = []
 		imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=sample_size)
 		assert noise_number == sample_size
@@ -998,10 +998,10 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
 	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp4/Exp0.h5'
-		gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp4", save_weights_path=save_weights_path)
+		save_weights_path = '../Weights/CT2XperCT/Exp_test2/Exp0.h5'
+		gan.train(epochs=100, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp_test2", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		raise 
