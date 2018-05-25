@@ -47,6 +47,12 @@ model.fit_generator(
 
 class MyDataset(object):
 	"""docstring for MyDataset"""
+
+	""" 
+	It's bad to load whole dataset/ Useless to use generator when we can load whole dataset
+	Here, we simply want to benefit data_augmentation generator from keras
+	Code temporary: TODO
+	"""
 	def __init__(self, paths= ["", ""], batch_size=32, augment=False, seed=1, domain="A"):
 		# super(MyDataset, self).__init__()
 		self.batch_size = batch_size
@@ -55,15 +61,18 @@ class MyDataset(object):
 		self.seed = seed
 		self.domain = domain
 		# train_generator, train_steps 
-		
-		self.generator, self.steps = self.my_generator(paths=self.paths, batch_size=self.batch_size, augment=self.augment, seed=self.seed)
 
-	def my_generator(self, paths= ["", ""], batch_size=32, augment=False, seed=1):
-		# we create two instances with the same arguments
 		print("Loading file...")
-		X_train, Y_train = np.load(paths[0]), np.load(paths[1])
+		self.X_train, self.Y_train = np.load(paths[0]), np.load(paths[1])
 		print("Done.")
-		print("Total datasets samples: {}".format(len(Y_train)))
+		print("Total datasets samples: {}".format(len(self.Y_train)))
+
+
+		self.generator, self.steps = self.my_generator(batch_size=self.batch_size, augment=self.augment, seed=self.seed)
+
+	def my_generator(self, batch_size=32, augment=False, seed=1):
+		# we create two instances with the same arguments
+		
 		if augment:
 			data_gen_args = dict(featurewise_center=False,
 								 featurewise_std_normalization=False,
@@ -91,17 +100,19 @@ class MyDataset(object):
 
 		# Provide the same seed and keyword arguments to the fit and flow methods
 		# seed = 1
-		image_datagen.fit(X_train, augment=augment, seed=seed)#
-		mask_datagen.fit(Y_train, augment=augment, seed=seed)#augment
+		image_datagen.fit(self.X_train, augment=augment, seed=seed)#
+		mask_datagen.fit(self.Y_train, augment=augment, seed=seed)#augment
 		# SEED need to be the same as image_datagen.fit(..., seed=seed) Lu 
-		image_generator = image_datagen.flow(X_train, batch_size=batch_size, seed=seed) 
-		mask_generator = image_datagen.flow(Y_train, batch_size=batch_size, seed=seed)  
+		image_generator = image_datagen.flow(self.X_train, batch_size=batch_size, seed=seed) 
+		mask_generator = image_datagen.flow(self.Y_train, batch_size=batch_size, seed=seed)  
 		# combine generators into one which yields image and masks
 		train_generator = zip(image_generator, mask_generator)
-		sample_number = len(Y_train)
+		sample_number = len(self.Y_train)
 		train_steps = sample_number/batch_size
 
 		return train_generator, train_steps
+	
+
 	def next(self):
 		img, mask = self.generator.__next__()
 		current_batch_size = img.shape[0]

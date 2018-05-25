@@ -193,19 +193,21 @@ def my_critic_acc(y_true, y_pred):
 	sign = K.less(K.zeros(1), y_true*y_pred)
 	return K.mean(sign)
 
-class PixelDA(object):
+class PixelDA(_DLalgo):
 	"""
 	Paradigm of GAN (keras implementation)
-
-	1. Construct D
-		1a) Compile D
-	2. Construct G
-	3. Set D.trainable = False
-	4. Stack G and D, to construct GAN (combined model)
-		 4a) Compile GAN
+	NEW: change order
 	
-	Approved by fchollet: "the process you describe is in fact correct."
+	Prepare (sequential) models: D, G, C/S (classifier/segmenter)
 
+	1. Construct combined_D = D+G (train D only)
+		1a) G.trainable = False
+		1b) Compile combined_D
+	2. Construct combined_GC = D+G+C (train G and C: classifier)
+		2a) Set D.trainable = False
+		2b) Compile combined_GC
+	
+	
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
 	def __init__(self, noise_size=(100,), 
@@ -263,69 +265,6 @@ class PixelDA(object):
 		for key in kwargs:
 			setattr(self, key, kwargs[key])
 
-	def checktype(self, A):
-		key_to_be_purge = []
-		for key in A:
-			if not type(A[key]) in [list, dict, int, float, str, tuple, np.ndarray, bool]:
-				# A.pop(key)
-				key_to_be_purge.append(key)
-			else:
-				pass
-		print("Purging {} keys (in order to save config): {}.".format(len(key_to_be_purge), key_to_be_purge))
-		for key in key_to_be_purge:
-			A.pop(key)
-		print("+ Done.")
-		return A
-
-	def save_config(self, save2path="./test.dill", verbose=False):
-		"""
-		Save config at the end (before training) !
-
-		"""
-		dirpath = "/".join(save2path.split("/")[:-1])
-
-		if not os.path.exists(dirpath):
-			os.makedirs(dirpath)
-		
-
-		# A shallow copy of self.__dict__
-		normal_attrs = dict(self.__dict__)
-		normal_attrs = self.checktype(normal_attrs)
-	
-		print("Saving {} class attributes to file {}...".format(len(normal_attrs), save2path))
-		with open(save2path, "wb") as file:
-			dill.dump(normal_attrs, file)
-		if verbose:
-			print("Normal attributes are: {}".format(normal_attrs))
-		print("+ Done.")
-		# print(len(self.__dict__))
-
-	def load_config(self, from_file="./test.dill", verbose=False):
-		"""
-		It's important to load config BEFORE build_all_model !
-		"""
-		print("Loading class attributes from file {}...".format(from_file))
-		with open(from_file, "rb") as file:
-			kwargs = dill.load(file)
-		## init default attributes
-		if verbose:
-			print("Number of attributes: {}".format(len(kwargs)))
-		self.__init__(**kwargs) # TODO !!!
-
-		## init attributes that are created in class functions
-		for key in kwargs:
-			setattr(self, key, kwargs[key])
-
-		print("+ Done.")
-
-	def print_config(self):
-		print("="*50)
-		print(" "*20+"Config")
-		print("="*50)
-		for key in self.__dict__:
-			print("{}: {}".format(key, self.__dict__[key]))
-
-		print("="*50)
 	def build_all_model(self):
 
 		# optimizer = Adam(0.0002, 0.5)
@@ -334,21 +273,36 @@ class PixelDA(object):
 
 		
 
-		# Build and compile the discriminators
+		# Build the discriminators
 		self.discriminator = self.build_discriminator()
 		self.discriminator.name = "Discriminator"
+		# Build the generator
+		self.generator = self.build_generator()
+		self.generator.name = "Generator"
+		# Build the task network (classification/segmentation) 
+		self.seg = self.build_segmenter()
+		self.seg.name = "Segmenter" 
 
-
+		### All Input layers
 		img_A = Input(shape=self.img_shape, name='source_image') # real A
 		img_B = Input(shape=self.img_shape, name='target_image') # real B
-		fake_img = Input(shape=self.img_shape, name="fake_image") # fake B
+		# fake_img = Input(shape=self.img_shape, name="fake_image") # fake B
+		noise = Input(shape=self.noise_size, name='noise_input')
 
+		
+
+
+		#################################### 
+		#### Build and Compile "combined_D"
+		####################################
+		self.generator.trainable = False
+		fake_B = self.generator([img_A, noise])
 		# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
-		avg_img = RandomWeightedAverage()([img_B, fake_img])
+		avg_img = RandomWeightedAverage()([img_B, fake_B])
 		
 
 		real_img_rating = self.discriminator(img_B) 
-		fake_img_rating = self.discriminator(fake_img)
+		fake_img_rating = self.discriminator(fake_B)
 		avg_img_output = self.discriminator(avg_img)
 
 		# The gradient penalty loss function requires the input averaged samples to get gradients. However,
@@ -360,10 +314,10 @@ class PixelDA(object):
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
-			self.discriminator_model = Model(inputs=[img_B, fake_img],  #, avg_img
+			self.combined_D = Model(inputs=[img_B, fake_B],  #, avg_img
 											# loss_weights=[1,1,1], # useless, since we have multiply the penalization by GRADIENT_PENALTY_WEIGHT=10
 											outputs=[real_img_rating, fake_img_rating, avg_img_output])
-			self.discriminator_model.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
+			self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
 				metrics=[my_critic_acc])
 		else:
@@ -372,40 +326,28 @@ class PixelDA(object):
 				metrics=['accuracy'])
 
 
+		#################################### 
+		#### Build and Compile "combined_GC"
+		####################################
 
 		# For the combined model we will only train the generator and Segmenter
 		self.discriminator.trainable = False
-
-		# Build the generator
-		self.generator = self.build_generator()
-		self.generator.name = "Generator"
-		# Build the task (segmentation) network
-		self.seg = self.build_segmenter()
-		self.seg.name = "Segmenter" 
-		# Input images from both domains
-
-		
-		# Input noise
-		noise = Input(shape=self.noise_size, name='noise_input')
-
 		# Translate images from domain A to domain B
-		fake_B = self.generator([img_A, noise])
-
+		# fake_B = self.generator([img_A, noise])
+		# Discriminator determines validity of translated images
+		valid = self.discriminator(fake_B) # fake_B_rating
 		# Segment the translated image
 		mask_pred = self.seg(fake_B)
 
-		
-		# Discriminator determines validity of translated images
-		valid = self.discriminator(fake_B) # fake_B_rating
 		if self.use_Wasserstein:
-			self.combined = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
-			self.combined.compile(optimizer=optimizer, 
+			self.combined_GC = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
+			self.combined_GC.compile(optimizer=optimizer, 
 									loss=[wasserstein_loss, dice_coef_loss],
 									loss_weights=[self.lambda_adv, self.lambda_seg], 
 									metrics=['accuracy'])
 		else:
-			self.combined = Model([img_A, noise], [valid, mask_pred])
-			self.combined.compile(loss=['mse', dice_coef_loss],
+			self.combined_GC = Model([img_A, noise], [valid, mask_pred])
+			self.combined_GC.compile(loss=['mse', dice_coef_loss],
 										loss_weights=[self.lambda_adv, self.lambda_seg],
 										optimizer=optimizer,
 										metrics=['accuracy'])
@@ -508,7 +450,7 @@ class PixelDA(object):
 	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5"):
 		print("Loading pretrained weights from path: {} ...".format(weights_path))
 
-		self.combined.load_weights(weights_path, by_name=True)
+		self.combined_GC.load_weights(weights_path, by_name=True)
 		print("+ Done.")
 	def summary(self):
 		print("="*50)
@@ -524,24 +466,24 @@ class PixelDA(object):
 		if self.use_Wasserstein:
 			print("="*50)
 			print("Discriminator model summary:")
-			self.discriminator_model.summary()
+			self.combined_D.summary()
 		print("="*50)
 		print("Combined model summary:")
-		self.combined.summary()
+		self.combined_GC.summary()
 
 	def write_tensorboard_graph(self, to_dir="../logs", save_png2dir="../Model_graph"):
 		if not os.path.exists(save_png2dir):
 			os.makedirs(save_png2dir)
 		tensorboard = keras.callbacks.TensorBoard(log_dir=to_dir, histogram_freq=0, write_graph=True, write_images=False)
-		# tensorboard.set_model(self.combined)
-		tensorboard.set_model(self.discriminator_model)
+		# tensorboard.set_model(self.combined_GC)
+		tensorboard.set_model(self.combined_D)
 		try:
-			plot_model(self.combined, to_file=os.path.join(save_png2dir, "Combined_model.png"))
-			plot_model(self.discriminator_model, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+			plot_model(self.combined_GC, to_file=os.path.join(save_png2dir, "Combined_model.png"))
+			plot_model(self.combined_D, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
 		except:
 			pass
 		
-	def train(self, iterations, 
+	def train(self, epochs, 
 		sample_interval=50, 
 		save_sample2dir="../samples/exp0", 
 		save_weights_path='../Weights/all_weights.h5', 
@@ -556,180 +498,187 @@ class PixelDA(object):
 		test_accs = []
 
 
+		### After "train_steps" iteration == One epoch
+		train_steps = np.max(self.Dataset_A.steps, self.Dataset_B.steps)
 		## Monitor to save model weights Lu
 		best_test_cls_acc = 0
 		second_best_cls_acc = -1
-
 		st = time()
 		elapsed_time = 0
-		for iteration in range(iterations):
-			if time_monitor and (iteration%10 ==0) and (iteration>0):
-				et = time()
-				elapsed_time = et-st
-				st = et
-				
+
+		for epoch in range(epochs):
+			print("="*50)
+			print("New epoch: {}".format(epoch))
+			print("="*50)
+			for iteration in range(train_steps):
+				if time_monitor and (iteration%10 ==0) and (iteration>0):
+					et = time()
+					elapsed_time = et-st
+					st = et
 			# ---------------------
 			#  Train Discriminator
 			# ---------------------
 			# n_sample = half_batch # imgs_A.shape[0]
 			
-			for _ in range(self.critic_steps):
+				for _ in range(self.critic_steps):
+
+					if self.dataset_name == "MNIST":
+						imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
+						imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=self.batch_size)	
+					elif self.dataset_name == "CT":
+						imgs_A, _ = self.Dataset_A.next()
+						imgs_B, _ = self.Dataset_B.next()
+					
+					noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
+					# noise_prior = np.random.rand(half_batch, self.noise_size[0]) #  6/5/2018
+					
+					# Translate images from domain A to domain B
+					# fake_B = self.generator.predict([imgs_A, noise_prior])
+					if self.use_PatchGAN:
+						valid = np.ones((self.batch_size,) + self.disc_patch)
+						fake = np.zeros((self.batch_size,) + self.disc_patch)
+					else:
+						if self.use_Wasserstein:
+							valid = np.ones((self.batch_size, 1))
+							fake = - valid #np.ones((half_batch, 1)) # = - valid ? 
+							dummy_y = np.zeros((self.batch_size, 1)) # NEW
+						else:
+							valid = np.ones((self.batch_size, 1))
+							fake = np.zeros((self.batch_size, 1))
+					
+					
+					
+
+					# Train the discriminators (original images = real / translated = Fake)
+					# d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
+					# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
+					# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+					if self.use_Wasserstein:
+						d_loss = self.combined_D.train_on_batch([imgs_A, noise_prior], [valid, fake, dummy_y])
+						# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
+					else:
+						D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
+						D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
+						d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
+
+
+				# --------------------------------
+				#  Train Generator and Segmenter
+				# --------------------------------
+				# Sample a batch of images from both domains
 
 				if self.dataset_name == "MNIST":
-					imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
-					imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=self.batch_size)	
+					imgs_A, _, masks_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size, return_mask=True)
+					imgs_B, _, masks_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size, return_mask=True)
+						
 				elif self.dataset_name == "CT":
-					imgs_A, _ = self.Dataset_A.next()
-					imgs_B, _ = self.Dataset_B.next()
-				
-				noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
-				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) #  6/5/2018
-				
-				# Translate images from domain A to domain B
-				fake_B = self.generator.predict([imgs_A, noise_prior])
-				if self.use_PatchGAN:
-					valid = np.ones((self.batch_size,) + self.disc_patch)
-					fake = np.zeros((self.batch_size,) + self.disc_patch)
-				else:
-					if self.use_Wasserstein:
-						valid = np.ones((self.batch_size, 1))
-						fake = - valid #np.ones((half_batch, 1)) # = - valid ? 
-						dummy_y = np.zeros((self.batch_size, 1)) # NEW
-					else:
-						valid = np.ones((self.batch_size, 1))
-						fake = np.zeros((self.batch_size, 1))
-				
-				
-				
-
-				# Train the discriminators (original images = real / translated = Fake)
-				# d_loss_real = self.discriminator.train_on_batch(imgs_B, valid)
-				# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
-				# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-				if self.use_Wasserstein:
-					d_loss = self.discriminator_model.train_on_batch([imgs_B, fake_B], [valid, fake, dummy_y])
-					# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
-				else:
-					D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
-					D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
-					d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label)
-
-
-			# --------------------------------
-			#  Train Generator and Segmenter
-			# --------------------------------
-			# Sample a batch of images from both domains
-
-			if self.dataset_name == "MNIST":
-				imgs_A, _, masks_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size, return_mask=True)
-				imgs_B, _, masks_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size, return_mask=True)
-					
-			elif self.dataset_name == "CT":
-				imgs_A, masks_A = self.Dataset_A.next()
-				imgs_B, masks_B = self.Dataset_B.next()
-			else:
-				pass
-
-
-			# One-hot encoding of labels
-			# labels_A = to_categorical(labels_A, num_classes=self.num_classes)
-
-
-			# The generators want the discriminators to label the translated images as real
-			if self.use_PatchGAN:
-				valid = np.ones((self.batch_size,) + self.disc_patch)
-			else:
-				valid = np.ones((self.batch_size, 1))
-
-			#
-			noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
-			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) #  6/5/2018
-
-			# Train the generator and Segmenter
-			g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) 
-
-
-			#-----------------------
-			# Evaluation (domain B)
-			#-----------------------
-
-			pred_B = self.seg.predict(imgs_B)
-			# test_acc = np.mean(np.argmax(pred_B, axis=1) == labels_B)
-			
-			_, test_acc = dice_predict(masks_B, pred_B) 
-	
-			# Add accuracy to list of last 100 accuracy measurements
-			test_accs.append(test_acc)
-			if len(test_accs) > 100:
-				test_accs.pop(0)
-
-			
-			if iteration % 10 == 0:
-				
-
-				if self.use_Wasserstein:
-					d_real_acc = 100*float(d_loss[4])
-					d_fake_acc = 100*float(d_loss[5])
-					d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
-				else:
-					d_train_acc = 100*float(d_loss[1])
-				
-				gen_loss = g_loss[1]
-
-				clf_train_acc = 100*float(g_loss[-1])
-				clf_train_loss = g_loss[2]
-
-				current_test_acc = 100*float(test_acc)
-				test_mean_acc = 100*float(np.mean(test_accs))
-
-				
-				g_loss.append(current_test_acc)
-				g_loss.append(test_mean_acc)
-
-				with open(os.path.join(dirpath, "D_Losses.csv"), "ab") as csv_file:
-					np.savetxt(csv_file, np.array(d_loss).reshape(1,-1), delimiter=",")
-				with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
-					np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
-
-				message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [seg - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(iteration, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
-
-				if test_mean_acc > best_test_cls_acc:
-					second_best_cls_acc = best_test_cls_acc
-					best_test_cls_acc = test_mean_acc
-					
-					if save_model:
-						self.combined.save(save_weights_path)
-					else:
-						self.combined.save_weights(save_weights_path)
-					message += "  (best)"
-					 
-				elif test_mean_acc > second_best_cls_acc:
-					second_best_cls_acc = test_mean_acc
-					
-					if save_model:
-						self.combined.save(save_weights_path)
-					else:
-						self.combined.save_weights(save_weights_path[:-3]+"_bis.h5")
-					message += "  (second best)"
-
+					imgs_A, masks_A = self.Dataset_A.next()
+					imgs_B, masks_B = self.Dataset_B.next()
 				else:
 					pass
-				if time_monitor:
-					message += "...elapsed time {}s.".format(elapsed_time)
-				print(message)
 
 
-			# If at save interval => save generated image samples
-			if iteration % sample_interval == 0:
-				self.sample_images(iteration, save2dir=save_sample2dir)
+				# One-hot encoding of labels
+				# labels_A = to_categorical(labels_A, num_classes=self.num_classes)
+
+
+				# The generators want the discriminators to label the translated images as real
+				if self.use_PatchGAN:
+					valid = np.ones((self.batch_size,) + self.disc_patch)
+				else:
+					valid = np.ones((self.batch_size, 1))
+
+				#
+				noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
+				# noise_prior = np.random.rand(batch_size, self.noise_size[0]) #  6/5/2018
+
+				# Train the generator and Segmenter
+				g_loss = self.combined_GC.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) 
+
+
+				#-----------------------
+				# Evaluation (domain B)
+				#-----------------------
+
+				pred_B = self.seg.predict(imgs_B) ### TODO TODO (not compiled yet ???)
+				# test_acc = np.mean(np.argmax(pred_B, axis=1) == labels_B)
+				
+				_, test_acc = dice_predict(masks_B, pred_B) 
+		
+				# Add accuracy to list of last 100 accuracy measurements
+				test_accs.append(test_acc)
+				if len(test_accs) > 100:
+					test_accs.pop(0)
+
+				
+				if iteration % 10 == 0:
+					
+
+					if self.use_Wasserstein:
+						d_real_acc = 100*float(d_loss[4])
+						d_fake_acc = 100*float(d_loss[5])
+						d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
+					else:
+						d_train_acc = 100*float(d_loss[1])
+					
+					gen_loss = g_loss[1]
+
+					clf_train_acc = 100*float(g_loss[-1])
+					clf_train_loss = g_loss[2]
+
+					current_test_acc = 100*float(test_acc)
+					test_mean_acc = 100*float(np.mean(test_accs))
+
+					
+					g_loss.append(current_test_acc)
+					g_loss.append(test_mean_acc)
+
+					with open(os.path.join(dirpath, "D_Losses.csv"), "ab") as csv_file:
+						np.savetxt(csv_file, np.array(d_loss).reshape(1,-1), delimiter=",")
+					with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
+						np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
+
+					message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [seg - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
+
+					if test_mean_acc > best_test_cls_acc:
+						second_best_cls_acc = best_test_cls_acc
+						best_test_cls_acc = test_mean_acc
+						
+						if save_model:
+							self.combined_GC.save(save_weights_path)
+						else:
+							self.combined_GC.save_weights(save_weights_path)
+						message += "  (best)"
+						 
+					elif test_mean_acc > second_best_cls_acc:
+						second_best_cls_acc = test_mean_acc
+						
+						if save_model:
+							self.combined_GC.save(save_weights_path)
+						else:
+							self.combined_GC.save_weights(save_weights_path[:-3]+"_bis.h5")
+						message += "  (second best)"
+
+					else:
+						pass
+
+					if time_monitor:
+						message += "...elapsed time {}s.".format(elapsed_time)
+					print(message)
+
+
+				# If at save interval => save generated image samples
+				if iteration % sample_interval == 0:
+					self.sample_images(epoch*train_steps+iteration, save2dir=save_sample2dir) 
 
 
 		#### NEW 24/5/2018
-		self.combined.save_weights(save_weights_path[:-3]+"_final.h5")
+		self.combined_GC.save_weights(save_weights_path[:-3]+"_final.h5")
 			
 				
 
-	def sample_images(self, iterations, save2dir="../samples"):
+	def sample_images(self, iter_num, save2dir="../samples"):
+
 		if not os.path.exists(save2dir):
 			os.makedirs(save2dir)
 
@@ -788,7 +737,7 @@ class PixelDA(object):
 				axes[i+2,j].imshow(img_liver_gt, aspect="equal", cmap="Blues", alpha=0.4)
 				axs[i+2,j].axis('off')
 				cnt += 1
-		fig.savefig(os.path.join(save2dir, "{}.png".format(iterations)))
+		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
 		plt.close()
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
@@ -948,6 +897,7 @@ class PixelDA(object):
 		print("+ All done.")
 	
 	def deploy_segmentation(self, batch_size=32):
+		# raise ValueError, "Not modified yet."
 		print("Predicting ... ")
 		if self.dataset_name == "MNIST":
 			pred_B = self.seg.predict(self.data_loader.mnistm_X, batch_size=batch_size)
@@ -1051,7 +1001,7 @@ if __name__ == '__main__':
 	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
 	try:
 		save_weights_path = '../Weights/CT2XperCT/Exp4/Exp0.h5'
-		gan.train(iterations=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp4", save_weights_path=save_weights_path)
+		gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp4", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		raise 
@@ -1059,13 +1009,13 @@ if __name__ == '__main__':
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')
 	# import ipdb; ipdb.set_trace()
-	# gan.train(iterations=100000, sample_interval=50, save_sample2dir="../samples/MNIST_SEG/Exp5", save_weights_path='../Weights/MNIST_SEG/Exp5/Exp0.h5')
+	# gan.train(epochs=100000, sample_interval=50, save_sample2dir="../samples/MNIST_SEG/Exp5", save_weights_path='../Weights/MNIST_SEG/Exp5/Exp0.h5')
 	# gan.train_segmenter(iterations=100000, batch_size=64, noise_range=1, save_weights_path="../Weights/MNIST_SEG/Exp5_seg/Exp0.h5")
 	# gan.combined.save('../Weights/MNIST_SEG/Exp1/Exp0_model.h5')
 
 
 	####### MNIST-M Classification (semi-supervised)
-	# gan.train(iterations=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
+	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	
 	# gan.deploy_transform(stop_after=200)
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
