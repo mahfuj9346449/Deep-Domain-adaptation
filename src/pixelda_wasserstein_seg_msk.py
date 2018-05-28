@@ -193,7 +193,7 @@ def my_critic_acc(y_true, y_pred):
 	sign = K.less(K.zeros(1), y_true*y_pred)
 	return K.mean(sign)
 
-class PixelDA(object):
+class PixelDA(_DLalgo):
 	"""
 	Paradigm of GAN (keras implementation)
 
@@ -263,69 +263,6 @@ class PixelDA(object):
 		for key in kwargs:
 			setattr(self, key, kwargs[key])
 
-	def checktype(self, A):
-		key_to_be_purge = []
-		for key in A:
-			if not type(A[key]) in [list, dict, int, float, str, tuple, np.ndarray, bool]:
-				# A.pop(key)
-				key_to_be_purge.append(key)
-			else:
-				pass
-		print("Purging {} keys (in order to save config): {}.".format(len(key_to_be_purge), key_to_be_purge))
-		for key in key_to_be_purge:
-			A.pop(key)
-		print("+ Done.")
-		return A
-
-	def save_config(self, save2path="./test.dill", verbose=False):
-		"""
-		Save config at the end (before training) !
-
-		"""
-		dirpath = "/".join(save2path.split("/")[:-1])
-
-		if not os.path.exists(dirpath):
-			os.makedirs(dirpath)
-		
-
-		# A shallow copy of self.__dict__
-		normal_attrs = dict(self.__dict__)
-		normal_attrs = self.checktype(normal_attrs)
-	
-		print("Saving {} class attributes to file {}...".format(len(normal_attrs), save2path))
-		with open(save2path, "wb") as file:
-			dill.dump(normal_attrs, file)
-		if verbose:
-			print("Normal attributes are: {}".format(normal_attrs))
-		print("+ Done.")
-		# print(len(self.__dict__))
-
-	def load_config(self, from_file="./test.dill", verbose=False):
-		"""
-		It's important to load config BEFORE build_all_model !
-		"""
-		print("Loading class attributes from file {}...".format(from_file))
-		with open(from_file, "rb") as file:
-			kwargs = dill.load(file)
-		## init default attributes
-		if verbose:
-			print("Number of attributes: {}".format(len(kwargs)))
-		self.__init__(**kwargs) # TODO !!!
-
-		## init attributes that are created in class functions
-		for key in kwargs:
-			setattr(self, key, kwargs[key])
-
-		print("+ Done.")
-
-	def print_config(self):
-		print("="*50)
-		print(" "*20+"Config")
-		print("="*50)
-		for key in self.__dict__:
-			print("{}: {}".format(key, self.__dict__[key]))
-
-		print("="*50)
 	def build_all_model(self):
 
 		# optimizer = Adam(0.0002, 0.5)
@@ -337,11 +274,21 @@ class PixelDA(object):
 		# Build and compile the discriminators
 		self.discriminator = self.build_discriminator()
 		self.discriminator.name = "Discriminator"
+		# Build the generator
+		self.generator = self.build_generator()
+		self.generator.name = "Generator"
+		# Build the task (segmentation) network
+		self.seg = self.build_segmenter()
+		self.seg.name = "Segmenter" 
+
 
 
 		img_A = Input(shape=self.img_shape, name='source_image') # real A
+		msk_A = Input(shape=self.img_shape[:-1]+(1,), name='source_mask') # ground truth mask A
 		img_B = Input(shape=self.img_shape, name='target_image') # real B
 		fake_img = Input(shape=self.img_shape, name="fake_image") # fake B
+		
+		noise = Input(shape=self.noise_size, name='noise_input')
 
 		# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
 		avg_img = RandomWeightedAverage()([img_B, fake_img])
@@ -371,44 +318,34 @@ class PixelDA(object):
 				optimizer=optimizer,
 				metrics=['accuracy'])
 
-
+		# Translate images from domain A to domain B
+		fake_B, fake_msk_B = self.generator([img_A, msk_A, noise]) ## NEW 27/5/2018
+		# Segment the translated image
+		mask_pred = self.seg(fake_B)
+		# Discriminator determines validity of translated images
+		valid = self.discriminator(fake_B) # fake_B_rating
 
 		# For the combined model we will only train the generator and Segmenter
 		self.discriminator.trainable = False
 
-		# Build the generator
-		self.generator = self.build_generator()
-		self.generator.name = "Generator"
-		# Build the task (segmentation) network
-		self.seg = self.build_segmenter()
-		self.seg.name = "Segmenter" 
-		# Input images from both domains
-
-		
-		# Input noise
-		noise = Input(shape=self.noise_size, name='noise_input')
-
-		# Translate images from domain A to domain B
-		fake_B = self.generator([img_A, noise])
-
-		# Segment the translated image
-		mask_pred = self.seg(fake_B)
-
-		
-		# Discriminator determines validity of translated images
-		valid = self.discriminator(fake_B) # fake_B_rating
 		if self.use_Wasserstein:
-			self.combined = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
+			self.combined = Model(inputs=[img_A, msk_A, noise], outputs=[valid, mask_pred]) # don't need 'fake_msk_B' ??? TODO NEW
 			self.combined.compile(optimizer=optimizer, 
 									loss=[wasserstein_loss, dice_coef_loss],
 									loss_weights=[self.lambda_adv, self.lambda_seg], 
 									metrics=['accuracy'])
 		else:
-			self.combined = Model([img_A, noise], [valid, mask_pred])
+			self.combined = Model([img_A, noise], [valid, mask_pred, fake_msk_B])
 			self.combined.compile(loss=['mse', dice_coef_loss],
 										loss_weights=[self.lambda_adv, self.lambda_seg],
 										optimizer=optimizer,
 										metrics=['accuracy'])
+
+		self.mask_deformer = Model(inputs=[img_A, msk_A, noise], outputs=[fake_msk_B])
+		self.mask_deformer.name = "Mask_deformer"
+		self.mask_deformer.compile(optimizer=optimizer, 
+									loss=[dice_coef_loss],
+									metrics=['accuracy'])
 
 
 
@@ -446,20 +383,29 @@ class PixelDA(object):
 				# d = BatchNormalization(momentum=0.8)(d) #  6/5/2018
 			d = Add()([d, layer_input])
 			return d
+		
 
 		# Image input
-		img = Input(shape=self.img_shape, name='image_input')
-
+		img = Input(shape=self.img_shape, name='source_image')
+		msk = Input(shape=self.img_shape[:-1]+(1,), name='source_mask') # ground truth mask A
 		## Noise input
 		noise = Input(shape=self.noise_size, name='noise_input')
 		noise_layer = Dense(self.img_rows*self.img_cols, activation="relu", kernel_initializer=self.my_initializer())(noise)
 		noise_layer = Reshape((self.img_rows,self.img_cols, 1))(noise_layer)
-		conditioned_img = keras.layers.concatenate([img, noise_layer])
+		conditioned_img_msk = keras.layers.concatenate([img, msk, noise_layer])
+		# conditioned_msk = keras.layers.concatenate([msk, noise_layer])
 		# keras.layers.concatenate
 
+		# encoder = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer())
 		# l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(img)
-		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer())(conditioned_img)
+		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer())(conditioned_img_msk)
+		# l_img = encoder(conditioned_img)
+		# l_msk = encoder(conditioned_msk)
+
 		
+		# model_gen = Sequential()
+		# for _ in range(self.residual_blocks):
+		# 	model_gen.add(residual)
 
 		# Propogate signal through residual blocks
 		r = residual_block(l1)
@@ -467,9 +413,13 @@ class PixelDA(object):
 			r = residual_block(r)
 
 		output_img = Conv2D(self.channels, kernel_size=3, padding='same', activation='tanh')(r)
+		output_msk = Conv2D(1, kernel_size=3, padding='same', activation='sigmoid')(r) ## 'hard_sigmoid' ??? TODO
 
-		return Model([img, noise], output_img)
+		return Model([img, msk, noise], [output_img, output_msk])
 
+	def build_mask_deformer(self):
+		fake_msk = Input(shape=self.img_shape[:-1]+(1,), name='fake_msk') # fake mask B (generated by Generator)
+		return Model([fake_msk], [fake_msk])
 
 	def build_discriminator(self):
 
@@ -538,6 +488,7 @@ class PixelDA(object):
 		try:
 			plot_model(self.combined, to_file=os.path.join(save_png2dir, "Combined_model.png"))
 			plot_model(self.discriminator_model, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+			plot_model(self.mask_deformer, to_file=os.path.join(save_png2dir, "Mask_deformer.png"))
 		except:
 			pass
 		
@@ -579,14 +530,16 @@ class PixelDA(object):
 					imgs_A, _ = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
 					imgs_B, _ = self.data_loader.load_data(domain="B", batch_size=self.batch_size)	
 				elif self.dataset_name == "CT":
-					imgs_A, _ = self.Dataset_A.next()
+					imgs_A, msks_A = self.Dataset_A.next()
 					imgs_B, _ = self.Dataset_B.next()
 				
 				noise_prior = np.random.normal(0,1, (self.batch_size, self.noise_size[0])) 
 				# noise_prior = np.random.rand(half_batch, self.noise_size[0]) #  6/5/2018
 				
 				# Translate images from domain A to domain B
-				fake_B = self.generator.predict([imgs_A, noise_prior])
+				fake_B, fake_msk_B = self.generator.predict([imgs_A, msks_A, noise_prior])
+
+
 				if self.use_PatchGAN:
 					valid = np.ones((self.batch_size,) + self.disc_patch)
 					fake = np.zeros((self.batch_size,) + self.disc_patch)
@@ -646,7 +599,8 @@ class PixelDA(object):
 			# noise_prior = np.random.rand(batch_size, self.noise_size[0]) #  6/5/2018
 
 			# Train the generator and Segmenter
-			g_loss = self.combined.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) 
+
+			g_loss = self.combined.train_on_batch([imgs_A, masks_A, noise_prior], [valid, ]) 
 
 
 			#-----------------------

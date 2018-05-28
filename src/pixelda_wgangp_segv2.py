@@ -663,7 +663,7 @@ class PixelDA(_DLalgo):
 						pass
 
 					if time_monitor:
-						message += "...elapsed time {}s.".format(elapsed_time)
+						message += "... {}s.".format(elapsed_time)
 					print(message)
 
 
@@ -689,8 +689,10 @@ class PixelDA(_DLalgo):
 		elif self.dataset_name == "CT":
 			r, c = 2, 5
 			assert r == 2
-			imgs_A, _ = self.Dataset_A.next()
+			imgs_A, masks_A = self.Dataset_A.next()
 			imgs_A = imgs_A[:c]
+			masks_A = masks_A[:c]
+			masks_A = np.squeeze(masks_A)
 			# raise ValueError("Not implemented error.")
 		else:
 			pass
@@ -727,17 +729,18 @@ class PixelDA(_DLalgo):
 				axs[i,j].imshow(gen_imgs[cnt], cmap="gray")
 				#axs[i, j].set_title(titles[i])
 				axs[i,j].axis('off')
-
-				############ TODO  ############
-				# visualize image with adaptive histogram
-				axs[i+1,j].imshow(apply_adapt_hist()(gen_imgs[cnt]), cmap="gray")
-				axs[i+1,j].axis('off')	
-				# mask image with ground truth mask
-				axs[i+2,j].imshow(apply_adapt_hist()(gen_imgs[cnt]), cmap="gray")
-				axs[i+2,j].imshow(img_liver_gt, aspect="equal", cmap="Blues", alpha=0.4)
-				axs[i+2,j].axis('off')
 				cnt += 1
-		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
+		for j in range(c):
+			############ TODO  ############
+			# visualize image with adaptive histogram
+			axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			axs[2,j].axis('off')	
+			# mask image with ground truth mask
+			axs[3,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
+			axs[3,j].axis('off')
+				
+		fig.savefig(os.path.join(save2dir, "{}.png".format(iterations)))
 		plt.close()
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
@@ -847,7 +850,7 @@ class PixelDA(_DLalgo):
 		use_uniform_linear=False, 
 		use_zeros=False,
 		seed = 17):
-	raise ValueError("Not modified yet.")
+		raise ValueError("Not modified yet.")
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
@@ -897,7 +900,6 @@ class PixelDA(_DLalgo):
 		print("+ All done.")
 	
 	def deploy_segmentation(self, batch_size=32):
-		# raise ValueError("Not modified yet.")
 		print("Predicting ... ")
 		if self.dataset_name == "MNIST":
 			pred_B = self.seg.predict(self.data_loader.mnistm_X, batch_size=batch_size)
@@ -994,7 +996,7 @@ if __name__ == '__main__':
 	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output16", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
