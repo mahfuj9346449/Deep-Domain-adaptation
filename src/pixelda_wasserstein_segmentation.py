@@ -193,7 +193,7 @@ def my_critic_acc(y_true, y_pred):
 	sign = K.less(K.zeros(1), y_true*y_pred)
 	return K.mean(sign)
 
-class PixelDA(object):
+class PixelDA(_DLalgo):
 	"""
 	Paradigm of GAN (keras implementation)
 
@@ -229,7 +229,7 @@ class PixelDA(object):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights
-		self.lambda_adv = 10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 5#before Exp5:10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 
@@ -240,7 +240,7 @@ class PixelDA(object):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 6#17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 12 #before Exp5: 6 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -263,69 +263,7 @@ class PixelDA(object):
 		for key in kwargs:
 			setattr(self, key, kwargs[key])
 
-	def checktype(self, A):
-		key_to_be_purge = []
-		for key in A:
-			if not type(A[key]) in [list, dict, int, float, str, tuple, np.ndarray, bool]:
-				# A.pop(key)
-				key_to_be_purge.append(key)
-			else:
-				pass
-		print("Purging {} keys (in order to save config): {}.".format(len(key_to_be_purge), key_to_be_purge))
-		for key in key_to_be_purge:
-			A.pop(key)
-		print("+ Done.")
-		return A
-
-	def save_config(self, save2path="./test.dill", verbose=False):
-		"""
-		Save config at the end (before training) !
-
-		"""
-		dirpath = "/".join(save2path.split("/")[:-1])
-
-		if not os.path.exists(dirpath):
-			os.makedirs(dirpath)
-		
-
-		# A shallow copy of self.__dict__
-		normal_attrs = dict(self.__dict__)
-		normal_attrs = self.checktype(normal_attrs)
 	
-		print("Saving {} class attributes to file {}...".format(len(normal_attrs), save2path))
-		with open(save2path, "wb") as file:
-			dill.dump(normal_attrs, file)
-		if verbose:
-			print("Normal attributes are: {}".format(normal_attrs))
-		print("+ Done.")
-		# print(len(self.__dict__))
-
-	def load_config(self, from_file="./test.dill", verbose=False):
-		"""
-		It's important to load config BEFORE build_all_model !
-		"""
-		print("Loading class attributes from file {}...".format(from_file))
-		with open(from_file, "rb") as file:
-			kwargs = dill.load(file)
-		## init default attributes
-		if verbose:
-			print("Number of attributes: {}".format(len(kwargs)))
-		self.__init__(**kwargs) # TODO !!!
-
-		## init attributes that are created in class functions
-		for key in kwargs:
-			setattr(self, key, kwargs[key])
-
-		print("+ Done.")
-
-	def print_config(self):
-		print("="*50)
-		print(" "*20+"Config")
-		print("="*50)
-		for key in self.__dict__:
-			print("{}: {}".format(key, self.__dict__[key]))
-
-		print("="*50)
 	def build_all_model(self):
 
 		# optimizer = Adam(0.0002, 0.5)
@@ -715,7 +653,7 @@ class PixelDA(object):
 				else:
 					pass
 				if time_monitor:
-					message += "... {}s.".format(elapsed_time)
+					message += "... {:.2f}s.".format(elapsed_time)
 				print(message)
 
 
@@ -1042,20 +980,24 @@ def apply_adapt_hist(clipLimit=2.0, tileGridSize=(8, 8)):
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64)#32
 	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp_test/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	# gan.load_dataset(dataset_name="CT", domain_A_folder="output16", domain_B_folder="output16_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output16", domain_B_folder="output16_x_128")
 	gan.print_config()
-	gan.write_tensorboard_graph()
+	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
 	
-	# try:
-	# 	save_weights_path = '../Weights/CT2XperCT/Exp_test/Exp0.h5'
-	# 	gan.train(iterations=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp_test", save_weights_path=save_weights_path)
-	# except KeyboardInterrupt:
-	# 	gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-	# 	raise 
+	try:
+		save_weights_path = '../Weights/CT2XperCT/Exp6/Exp0.h5'
+		gan.train(iterations=100000, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp6", save_weights_path=save_weights_path)
+	except KeyboardInterrupt:
+		gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		sys.exit()
+	except:
+		gan.combined_GC.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+		raise
 	
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')

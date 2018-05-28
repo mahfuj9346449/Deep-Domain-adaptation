@@ -224,14 +224,14 @@ class PixelDA(_DLalgo):
 		elif self.dataset_name == "CT":
 			self.img_shape = (128, 128, 1)
 		else:
-			raise ValueError, "Only support two datasets for now. ('CT', 'MNIST')"
+			raise ValueError("Only support two datasets for now. ('CT', 'MNIST')")
 
 		self.img_rows, self.img_cols, self.channels = self.img_shape
 
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights
-		self.lambda_adv = 10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 5#10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 
@@ -242,7 +242,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 6#17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -314,7 +314,7 @@ class PixelDA(_DLalgo):
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
-			self.combined_D = Model(inputs=[img_B, fake_B],  #, avg_img
+			self.combined_D = Model(inputs=[img_A, noise, img_B],  # img_B, fake_B
 											# loss_weights=[1,1,1], # useless, since we have multiply the penalization by GRADIENT_PENALTY_WEIGHT=10
 											outputs=[real_img_rating, fake_img_rating, avg_img_output])
 			self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
@@ -331,6 +331,7 @@ class PixelDA(_DLalgo):
 		####################################
 
 		# For the combined model we will only train the generator and Segmenter
+		self.generator.trainable = True
 		self.discriminator.trainable = False
 		# Translate images from domain A to domain B
 		# fake_B = self.generator([img_A, noise])
@@ -497,9 +498,11 @@ class PixelDA(_DLalgo):
 		# segmentation accuracy on 100 last batches of domain B
 		test_accs = []
 
-
+		
 		### After "train_steps" iteration == One epoch
-		train_steps = np.max(self.Dataset_A.steps, self.Dataset_B.steps)
+		train_steps = int(max(self.Dataset_A.steps, self.Dataset_B.steps))
+		print("Training steps per epoch: {}".format(train_steps))
+		
 		## Monitor to save model weights Lu
 		best_test_cls_acc = 0
 		second_best_cls_acc = -1
@@ -515,10 +518,10 @@ class PixelDA(_DLalgo):
 					et = time()
 					elapsed_time = et-st
 					st = et
-			# ---------------------
-			#  Train Discriminator
-			# ---------------------
-			# n_sample = half_batch # imgs_A.shape[0]
+				# ---------------------
+				#  Train Discriminator
+				# ---------------------
+				# n_sample = half_batch # imgs_A.shape[0]
 			
 				for _ in range(self.critic_steps):
 
@@ -539,8 +542,10 @@ class PixelDA(_DLalgo):
 						fake = np.zeros((self.batch_size,) + self.disc_patch)
 					else:
 						if self.use_Wasserstein:
-							valid = np.ones((self.batch_size, 1))
-							fake = - valid #np.ones((half_batch, 1)) # = - valid ? 
+							# TODO NEW TODO
+							ones = np.ones((self.batch_size, 1))
+							valid = ones+0.05*np.random.randn(self.batch_size, 1)
+							fake = -ones+0.05*np.random.randn(self.batch_size, 1) #- valid #np.ones((half_batch, 1)) # = - valid ? 
 							dummy_y = np.zeros((self.batch_size, 1)) # NEW
 						else:
 							valid = np.ones((self.batch_size, 1))
@@ -554,7 +559,7 @@ class PixelDA(_DLalgo):
 					# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
 					# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 					if self.use_Wasserstein:
-						d_loss = self.combined_D.train_on_batch([imgs_A, noise_prior], [valid, fake, dummy_y])
+						d_loss = self.combined_D.train_on_batch([imgs_A, noise_prior, imgs_B], [valid, fake, dummy_y])
 						# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
 					else:
 						D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
@@ -600,19 +605,20 @@ class PixelDA(_DLalgo):
 				# Evaluation (domain B)
 				#-----------------------
 
-				pred_B = self.seg.predict(imgs_B) ### TODO TODO (not compiled yet ???)
-				# test_acc = np.mean(np.argmax(pred_B, axis=1) == labels_B)
 				
-				_, test_acc = dice_predict(masks_B, pred_B) 
-		
-				# Add accuracy to list of last 100 accuracy measurements
-				test_accs.append(test_acc)
-				if len(test_accs) > 100:
-					test_accs.pop(0)
 
 				
 				if iteration % 10 == 0:
-					
+					#-----------------------
+					# Evaluation (domain B)
+					#-----------------------
+					pred_B = self.seg.predict(imgs_B) ### TODO TODO (not compiled yet ???)
+					_, test_acc = dice_predict(masks_B, pred_B) 
+					# Add accuracy to list of last 100 accuracy measurements
+					test_accs.append(test_acc)
+					if len(test_accs) > 10:
+						test_accs.pop(0)
+
 
 					if self.use_Wasserstein:
 						d_real_acc = 100*float(d_loss[4])
@@ -638,7 +644,7 @@ class PixelDA(_DLalgo):
 					with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
 						np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
 
-					message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [seg - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(epoch, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
+					message = "{} : [D - loss: {:.5f}, GP_loss: {:.5f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.5f}], [seg - loss: {:.5f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(iteration, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
 
 					if test_mean_acc > best_test_cls_acc:
 						second_best_cls_acc = best_test_cls_acc
@@ -663,13 +669,15 @@ class PixelDA(_DLalgo):
 						pass
 
 					if time_monitor:
-						message += "... {}s.".format(elapsed_time)
+						message += "... {:.2f}s.".format(elapsed_time)
 					print(message)
 
 
 				# If at save interval => save generated image samples
 				if iteration % sample_interval == 0:
+					sample_st = time()
 					self.sample_images(epoch*train_steps+iteration, save2dir=save_sample2dir) 
+					print("Sample images consumes time: {:.2f}".format(time()-sample_st))
 
 
 		#### NEW 24/5/2018
@@ -740,7 +748,7 @@ class PixelDA(_DLalgo):
 			axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
 			axs[3,j].axis('off')
 				
-		fig.savefig(os.path.join(save2dir, "{}.png".format(iterations)))
+		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
 		plt.close()
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
@@ -992,7 +1000,7 @@ def apply_adapt_hist(clipLimit=2.0, tileGridSize=(8, 8)):
 	return adapt_hist_transform
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64)#32
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
 	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
 	gan.build_all_model()
 	gan.summary()
@@ -1000,13 +1008,16 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp2/Exp0_bis.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp8/Exp0.h5')
 	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp_test2/Exp0.h5'
-		gan.train(epochs=100, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp_test2", save_weights_path=save_weights_path)
+		save_weights_path = '../Weights/CT2XperCT/Exp9/Exp0.h5'
+		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp9", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
-		gan.combined.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-		raise 
+		gan.combined_GC.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		sys.exit(0)
+	except:
+		gan.combined_GC.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+		raise
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')
