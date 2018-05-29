@@ -9,10 +9,11 @@ sys.path.append("/home/lulin/na4/my_packages")
 from utils import generator
 
 
-def plot_D_statistic(history, show=False, save2dir="../results/"):
+def plot_D_statistic(history, show=False, cut=None, save2dir="../results/"):
 	if not os.path.exists(save2dir):
 		os.makedirs(save2dir)
-
+	if cut is not None:
+		history = history[:cut]
 	length = len(history)
 	xaxis_scale = np.arange(0, length*10, 10)
 	plt.figure()
@@ -68,9 +69,11 @@ def plot_G_statistic(history, show=False, save2dir="../results/"):
 
 
 
-def plot_G_statistic_seg(history, show=False, save2dir="../results/"):
+def plot_G_statistic_seg(history, show=False, cut=None, save2dir="../results/"):
 	if not os.path.exists(save2dir):
 		os.makedirs(save2dir)
+	if cut is not None:
+		history = history[:cut]
 	length = len(history)
 	# last_100_mean_seg_acc = np.mean(history[-100:, 4])
 	xaxis_scale = np.arange(0, length*10, 10)
@@ -87,11 +90,12 @@ def plot_G_statistic_seg(history, show=False, save2dir="../results/"):
 	plt.figure()
 	plt.title("Segmenter accuracy")
 	# plt.set_xticks(np.arange(0, length*10, 10))
-	
+	best_dice = np.max(history[:, -1])
 	plt.plot(xaxis_scale, history[:, 4], label="Seg acc (train)")
 	plt.plot(xaxis_scale, 1.-history[:, 2], label="Seg dice (train)")
-	plt.plot(xaxis_scale, history[:, -1]/100, label="Seg dice (test)")
 	plt.plot(xaxis_scale, history[:, -2]/100, label="Seg dice (current)")
+	plt.plot(xaxis_scale, (best_dice/100)*np.ones(length) , label="Best mean dice {:.2f}%".format(best_dice))
+	plt.plot(xaxis_scale, history[:, -1]/100, label="Seg dice (test)")
 	# plt.plot(last_100_mean_cls_acc*np.ones(length), label="Last mean acc: {}".format(last_100_mean_cls_acc))
 
 	plt.xlabel("Iteration")
@@ -211,12 +215,12 @@ if __name__=="__main__":
 	## Segmentation 
 	#################
 
-	FOLDER_NAME = "Exp8"
+	FOLDER_NAME = "Exp7"
 	filepath = "../Weights/CT2XperCT/{}/G_Losses.csv".format(FOLDER_NAME)
 	with open(filepath, "rb") as file:
 		G = np.loadtxt(file, delimiter=",")
 	print(G.shape)
-	plot_G_statistic_seg(G, show=True, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+	plot_G_statistic_seg(G, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
 
 
 
@@ -224,4 +228,4 @@ if __name__=="__main__":
 	with open(filepath, "rb") as file:
 		D = np.loadtxt(file, delimiter=",")
 	print(D.shape)
-	plot_D_statistic(D, show=True, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+	plot_D_statistic(D, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))

@@ -231,7 +231,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights
-		self.lambda_adv = 5#10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 5 #Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 
@@ -242,7 +242,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 50# Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -254,7 +254,7 @@ class PixelDA(_DLalgo):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5#5 #7 #10
+			self.critic_steps = 5 #Exp9: 5 #5 #7 #10
 		else:
 			self.critic_steps = 1
 		
@@ -268,7 +268,8 @@ class PixelDA(_DLalgo):
 	def build_all_model(self):
 
 		# optimizer = Adam(0.0002, 0.5)
-		optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9) # Exp4 
+		# optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9) # Exp4, Exp8,9 
+		optimizer = Adam(0.00001, beta_1=0.0, beta_2=0.9) # Exp10
 		# optimizer = Adam(0.0001, beta_1=0.0, beta_2=0.9) # Exp3 of CT2XperCT
 
 		
@@ -1010,8 +1011,8 @@ if __name__ == '__main__':
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp8/Exp0.h5')
 	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp9/Exp0.h5'
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp9", save_weights_path=save_weights_path)
+		save_weights_path = '../Weights/CT2XperCT/Exp10_1/Exp0.h5'
+		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp10_1", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GC.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)
