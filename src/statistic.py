@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
 sys.path.append("/home/lulin/na4/my_packages")
-# sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
+sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 from utils import generator
 
 
@@ -229,3 +229,4 @@ if __name__=="__main__":
 		D = np.loadtxt(file, delimiter=",")
 	print(D.shape)
 	plot_D_statistic(D, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+	

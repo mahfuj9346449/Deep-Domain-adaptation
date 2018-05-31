@@ -197,7 +197,7 @@ class PixelDA(object):
 		self.normalize_G = False
 		self.normalize_D = False
 		self.normalize_C = True
-		
+		self.shift_label = False # TODO NEW 31/5/2018
 		# Number of residual blocks in the generator
 		self.residual_blocks = 17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
@@ -463,10 +463,22 @@ class PixelDA(object):
 		class_pred = Dense(self.num_classes, activation='softmax')(Flatten()(c5))
 
 		return Model(img, class_pred)
-	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5"):
+	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_cls=False):
 		print("Loading pretrained weights from path: {} ...".format(weights_path))
+		if only_cls:
+			# self.clf.load_weights(weights_path, by_name=True) # Don't work !
+			# See: https://github.com/keras-team/keras/issues/5348
+			# Solution:
+			# Build a model, load (all) weights, save sub model weigths as np.array, kill(clear session) model
+			# than finally, build new model, set sub model weights from pre-saved np.array !
+			self.combined.load_weights(weights_path, by_name=True)
+			clf_weights = self.clf.get_weights()
+			K.clear_session()
+			self.build_all_model()
+			self.clf.set_weights(clf_weights)
 
-		self.combined.load_weights(weights_path, by_name=True)
+		else:
+			self.combined.load_weights(weights_path, by_name=True)
 		print("+ Done.")
 	def summary(self):
 		print("="*50)
@@ -568,6 +580,8 @@ class PixelDA(object):
 			# Sample a batch of images from both domains
 			imgs_A, labels_A = self.data_loader.load_data(domain="A", batch_size=self.batch_size)
 			imgs_B, labels_B = self.data_loader.load_data(domain="B", batch_size=self.batch_size)
+			if self.shift_label:
+				labels_A = np.mod(labels_A+1, 10) #  == (labels_A+1) % 10
 
 			# One-hot encoding of labels
 			labels_A = to_categorical(labels_A, num_classes=self.num_classes)
@@ -918,20 +932,21 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True)
-	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_14_1/config.dill")
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, shift_label=True)
+	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp5_1/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	# gan.load_dataset()
+	gan.load_dataset()
 	
 	### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4/config.dill")
 	# gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
-	gan.deploy_debug(save2file="../domain_adapted/Others/Liver/mask.npy", sample_size=100, noise_number=256, seed = 17)
-
+	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5', only_cls=True)
+	# gan.deploy_debug(save2file="../domain_adapted/Others/Liver/mask.npy", sample_size=100, noise_number=256, seed = 17)
+	# import ipdb; ipdb.set_trace()
+	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp_shift1", save_weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')

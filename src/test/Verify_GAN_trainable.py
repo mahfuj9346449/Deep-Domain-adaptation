@@ -21,7 +21,7 @@ def get_session(gpu_fraction=0.5):
 		return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
 
-KTF.set_session(get_session(gpu_fraction=0.40)) # NEW 28-9-2017
+KTF.set_session(get_session(gpu_fraction=0.35)) # NEW 28-9-2017
 
 print(keras.__version__) # == 2.1.5
 
@@ -155,7 +155,6 @@ class GAN_test(object):
 
 			D_loss_fake = self.discriminator.train_on_batch(fake_img, fake)
 			D_loss_real = self.discriminator.train_on_batch(Images_real, real)
-
 			D_loss = 0.5*np.add(D_loss_fake, D_loss_real)
 
 			# Save number of trainable weights of D during training 
@@ -175,9 +174,15 @@ class GAN_test(object):
 			noise = np.random.uniform(-1,1, (batch_size, 10))
 			make_img_real = np.ones((batch_size, 1)) # Making fake images looks real.
 
+			save_D_weights_before_training_G = self.combined.get_layer("discriminator").get_layer("dense_1").get_weights()
+
 			G_loss = self.combined.train_on_batch(noise, make_img_real)
+			save_D_weights_after_training_G = self.combined.get_layer("discriminator").get_layer("dense_1").get_weights()
+
+
 			print("Nbs of trainable weigths of D during training of G: {}".format(len(self.discriminator.trainable_weights)))
-			print("Nbs of trainable weights of Combined during training: {}".format(len(self.combined._collected_trainable_weights)))
+			print("Nbs of trainable weights of Combined(G+D) during training: {}".format(len(self.combined._collected_trainable_weights)))
+			print("Discriminator's weights not changed after training of G: {}".format(np.allclose(save_D_weights_before_training_G[0], save_D_weights_after_training_G[0])))
 			# Assert that Combined model would not affect D's trainable weights during training 
 			assert D_trainable_weights == len(self.discriminator._collected_trainable_weights)
 			# Assert that Discriminator is freezed during training of Combined model

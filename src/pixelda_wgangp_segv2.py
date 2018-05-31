@@ -449,10 +449,27 @@ class PixelDA(_DLalgo):
 		
 		return model
 
-	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5"):
+	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_seg=False, seg_weights_path=None):
 		print("Loading pretrained weights from path: {} ...".format(weights_path))
+		if only_seg:
+			# self.seg.load_weights(weights_path, by_name=True) doesn't work !!
+			# See: https://github.com/keras-team/keras/issues/5348
+			# Solution:
+			# Build a model, load (all) weights, save sub model weigths as np.array, kill(clear session) model
+			# than finally, build new model, set sub model weights from pre-saved np.array !
 
-		self.combined_GC.load_weights(weights_path, by_name=True)
+			self.combined_GC.load_weights(weights_path, by_name=True)
+			seg_weights = self.seg.get_weights()
+			K.clear_session()
+			self.build_all_model()
+			self.seg.set_weights(seg_weights)
+		else:
+			self.combined_GC.load_weights(weights_path, by_name=True)
+
+		if seg_weights_path is not None:
+			## TODO 
+			raise
+			self.seg.load_weights(seg_weights_path)
 		print("+ Done.")
 	def summary(self):
 		print("="*50)
@@ -495,6 +512,18 @@ class PixelDA(_DLalgo):
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 		self.save_config(save2path=os.path.join(dirpath, "config.dill"), verbose=True)
+
+		""" In order to modify loss weights during training, we need to:
+		 save model's weigths with np.array, clear session, rebuild model, recompile model, load weights.
+
+		See: Issues 6446 and 2595
+		- https://github.com/keras-team/keras/issues/6446
+		- https://github.com/keras-team/keras/issues/2595
+		
+		Not implemented for now.
+		"""
+
+
 
 		# segmentation accuracy on 100 last batches of domain B
 		test_accs = []
@@ -814,9 +843,6 @@ class PixelDA(_DLalgo):
 				else:
 					pass
 				print(message)
-				
-
-
 
 		return
 
@@ -1009,16 +1035,18 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp8/Exp0.h5')
-	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp10_1/Exp0.h5'
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp10_1", save_weights_path=save_weights_path)
-	except KeyboardInterrupt:
-		gan.combined_GC.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-		sys.exit(0)
-	except:
-		gan.combined_GC.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-		raise
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp10_1/Exp0.h5')
+	# try:
+	# 	save_weights_path = '../Weights/CT2XperCT/Exp10_1/Exp0.h5'
+	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp10_1", save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.combined_GC.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.combined_GC.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
+
+	gan.deploy_segmentation()
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')
