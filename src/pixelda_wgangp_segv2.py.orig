@@ -246,7 +246,11 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
+<<<<<<< HEAD
 		self.residual_blocks = 50 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+=======
+		self.residual_blocks = 25 #50# Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+>>>>>>> 9bab47c57c375b1a824d0b0ee3a739663521162f
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False

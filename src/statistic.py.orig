@@ -215,12 +215,21 @@ if __name__=="__main__":
 	## Segmentation 
 	#################
 
+<<<<<<< HEAD
 	FOLDER_NAME = "Exp7"
+	# filepath = "../Weights/CT2XperCT/{}/G_Losses.csv".format(FOLDER_NAME)
+	# with open(filepath, "rb") as file:
+	# 	G = np.loadtxt(file, delimiter=",")
+	# print(G.shape)
+	# plot_G_statistic_seg(G, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+=======
+	FOLDER_NAME = "Exp11"
 	filepath = "../Weights/CT2XperCT/{}/G_Losses.csv".format(FOLDER_NAME)
 	with open(filepath, "rb") as file:
 		G = np.loadtxt(file, delimiter=",")
 	print(G.shape)
 	plot_G_statistic_seg(G, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+>>>>>>> 9bab47c57c375b1a824d0b0ee3a739663521162f
 
 
 
@@ -228,5 +237,6 @@ if __name__=="__main__":
 	with open(filepath, "rb") as file:
 		D = np.loadtxt(file, delimiter=",")
 	print(D.shape)
-	plot_D_statistic(D, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+	# plot_D_statistic(D, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
 	
+	import ipdb; ipdb.set_trace()
