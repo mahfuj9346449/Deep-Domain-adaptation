@@ -245,7 +245,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 50# Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 25 #50# Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -319,11 +319,12 @@ class PixelDA(_DLalgo):
 
 		if self.use_Wasserstein:
 			self.combined_D = Model(inputs=[img_A, noise, img_B],  # img_B, fake_B
-											loss_weights=[1,1, self.GRADIENT_PENALTY_WEIGHT], # multiply gradient penalization loss by self.GRADIENT_PENALTY_WEIGHT
-											outputs=[real_img_rating, fake_img_rating, avg_img_output])
+									outputs=[real_img_rating, fake_img_rating, avg_img_output])
+
 			self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
-				optimizer=optimizer,
-				metrics=[my_critic_acc])
+									loss_weights=[1,1, self.GRADIENT_PENALTY_WEIGHT], # multiply gradient penalization loss by self.GRADIENT_PENALTY_WEIGHT
+									optimizer=optimizer,
+									metrics=[my_critic_acc])
 		else:
 			self.discriminator.compile(loss='mse',
 				optimizer=optimizer,
@@ -1031,17 +1032,17 @@ def apply_adapt_hist(clipLimit=2.0, tileGridSize=(8, 8)):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp10_1/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp8/config.dill")
 	gan.build_all_model()
 	# gan.summary()
 	gan.load_dataset(dataset_name="CT", domain_A_folder="output17", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp10_1/Exp0.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp11/Exp0_keyboardinterrupt.h5')
 	# try:
-	# 	save_weights_path = '../Weights/CT2XperCT/Exp10_1/Exp0.h5'
-	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp10_1", save_weights_path=save_weights_path)
+	# 	save_weights_path = '../Weights/CT2XperCT/Exp11/Exp0.h5'
+	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp11", save_weights_path=save_weights_path)
 	# except KeyboardInterrupt:
 	# 	gan.combined_GC.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 	# 	sys.exit(0)

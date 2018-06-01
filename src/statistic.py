@@ -31,8 +31,8 @@ def plot_D_statistic(history, show=False, cut=None, save2dir="../results/"):
 
 	plt.figure()
 	plt.title("Critic accuracy")
-	plt.plot(history[:, 4], label="Critic acc (real)")
-	plt.plot(history[:, 5], label="Critic acc (fake)")
+	plt.plot(xaxis_scale, history[:, 4], label="Critic acc (real)")
+	plt.plot(xaxis_scale, history[:, 5], label="Critic acc (fake)")
 	plt.xlabel("Iteration")
 	plt.legend(loc="best")
 	plt.savefig(os.path.join(save2dir, "critic_acc.png"))
@@ -215,7 +215,7 @@ if __name__=="__main__":
 	## Segmentation 
 	#################
 
-	FOLDER_NAME = "Exp7"
+	FOLDER_NAME = "Exp11"
 	filepath = "../Weights/CT2XperCT/{}/G_Losses.csv".format(FOLDER_NAME)
 	with open(filepath, "rb") as file:
 		G = np.loadtxt(file, delimiter=",")
