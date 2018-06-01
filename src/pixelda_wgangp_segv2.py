@@ -1031,10 +1031,10 @@ def apply_adapt_hist(clipLimit=2.0, tileGridSize=(8, 8)):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/Exp1/config.dill")
+	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp10_1/config.dill")
 	gan.build_all_model()
-	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output16", domain_B_folder="output16_x_128")
+	# gan.summary()
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output17", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")

@@ -932,8 +932,8 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, shift_label=True)
-	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp5_1/config.dill")
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64, shift_label=True)
+	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_14_1/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset()
@@ -943,10 +943,10 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5', only_cls=True)
+	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5', only_cls=True)
 	# gan.deploy_debug(save2file="../domain_adapted/Others/Liver/mask.npy", sample_size=100, noise_number=256, seed = 17)
 	# import ipdb; ipdb.set_trace()
-	gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp_shift1", save_weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5')
+	# gan.train(epochs=100000, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp_shift1", save_weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
