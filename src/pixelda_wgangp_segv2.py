@@ -230,9 +230,12 @@ class PixelDA(_DLalgo):
 
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
-		# Loss weights
-		self.lambda_adv = 5 #Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
-		self.lambda_seg = 1
+		# Loss weights (initial value)
+		self.lambda_adv = 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_seg = 1 
+		self.loss_weights_adv = K.variable(self.lambda_adv)
+		self.loss_weights_seg = K.variable(self.lambda_seg)
+		# Use Keras variable so that we could modify it during training !
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 
 		self.sf = 64
@@ -311,12 +314,12 @@ class PixelDA(_DLalgo):
 		# of the function with the averaged samples here.
 		partial_gp_loss = partial(gradient_penalty_loss,
 					  averaged_samples=avg_img,
-					  gradient_penalty_weight=self.GRADIENT_PENALTY_WEIGHT)
+					  gradient_penalty_weight=1.0)
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
 			self.combined_D = Model(inputs=[img_A, noise, img_B],  # img_B, fake_B
-											# loss_weights=[1,1,1], # useless, since we have multiply the penalization by GRADIENT_PENALTY_WEIGHT=10
+											loss_weights=[1,1, self.GRADIENT_PENALTY_WEIGHT], # multiply gradient penalization loss by self.GRADIENT_PENALTY_WEIGHT
 											outputs=[real_img_rating, fake_img_rating, avg_img_output])
 			self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
@@ -345,12 +348,12 @@ class PixelDA(_DLalgo):
 			self.combined_GC = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
 			self.combined_GC.compile(optimizer=optimizer, 
 									loss=[wasserstein_loss, dice_coef_loss],
-									loss_weights=[self.lambda_adv, self.lambda_seg], 
+									loss_weights=[self.loss_weights_adv, self.loss_weights_seg], 
 									metrics=['accuracy'])
 		else:
 			self.combined_GC = Model([img_A, noise], [valid, mask_pred])
 			self.combined_GC.compile(loss=['mse', dice_coef_loss],
-										loss_weights=[self.lambda_adv, self.lambda_seg],
+										loss_weights=[self.loss_weights_adv, self.loss_weights_seg],
 										optimizer=optimizer,
 										metrics=['accuracy'])
 
@@ -955,7 +958,7 @@ class PixelDA(_DLalgo):
 		lower_bound = Moy - 2.576*Std/np.sqrt(N_samples) 
 		upper_bound = Moy + 2.576*Std/np.sqrt(N_samples)
 		print("="*50)
-		print("Unsupervised MNIST-M segmentation accuracy : {}".format(Moy))
+		print("Unsupervised {} segmentation dice : {}".format(self.dataset_name, Moy))
 		print("Confidence interval (99%) [{}, {}]".format(lower_bound, upper_bound))
 		print("Length of confidence interval 99%: {}".format(upper_bound-lower_bound))
 		print("="*50)
