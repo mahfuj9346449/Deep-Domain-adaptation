@@ -95,6 +95,7 @@ from unet.U_net import UNet
 from unet.CT_generator import MyDataset
 from DLalgors import _DLalgo
 import cv2
+from statistic import plot_D_statistic, plot_G_statistic_seg
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
 	The Wasserstein loss function is very simple to calculate. In a standard GAN, the discriminator
@@ -231,7 +232,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights (initial value)
-		self.lambda_adv = 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 20 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1 
 		self.loss_weights_adv = K.variable(self.lambda_adv)
 		self.loss_weights_seg = K.variable(self.lambda_seg)
@@ -245,7 +246,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 50# Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 50 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -546,6 +547,11 @@ class PixelDA(_DLalgo):
 			print("="*50)
 			print("New epoch: {}".format(epoch))
 			print("="*50)
+			if epoch == 2:
+				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+			elif epoch == 5:
+				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+
 			for iteration in range(train_steps):
 				if time_monitor and (iteration%10 ==0) and (iteration>0):
 					et = time()
@@ -707,11 +713,21 @@ class PixelDA(_DLalgo):
 
 
 				# If at save interval => save generated image samples
-				if iteration % sample_interval == 0:
+				if iteration % sample_interval == 0 and iteration>0:
 					sample_st = time()
 					self.sample_images(epoch*train_steps+iteration, save2dir=save_sample2dir) 
-					print("Sample images consumes time: {:.2f}".format(time()-sample_st))
 
+					print("Sample images/History consumes time: {:.2f}".format(time()-sample_st))
+				if iteration % 50 == 0 and epoch>0:
+					### Plot loss history so far
+					history_filepath_G = os.path.join(dirpath, "G_Losses.csv")
+					history_filepath_D = os.path.join(dirpath, "D_Losses.csv")
+					with open(history_filepath_G, "rb") as file:
+						G_hist = np.loadtxt(file, delimiter=",")
+					with open(history_filepath_D, "rb") as file:
+						D_hist = np.loadtxt(file, delimiter=",")
+					plot_G_statistic_seg(G_hist, show=False, save2dir=dirpath)
+					plot_D_statistic(D_hist, show=False, save2dir=dirpath)
 
 		#### NEW 24/5/2018
 		self.combined_GC.save_weights(save_weights_path[:-3]+"_final.h5")
