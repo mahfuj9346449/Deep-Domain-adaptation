@@ -48,7 +48,7 @@ if args.gpu == "simple":
 
 	if machine_name == "lulin-QX-350-Series":
 		print("Using local machine..")
-		KTF.set_session(get_session(gpu_fraction=0.2)) # NEW 28-9-2017
+		KTF.set_session(get_session(gpu_fraction=0.35)) # NEW 28-9-2017
 	else:
 		KTF.set_session(get_session(gpu_fraction=0.95)) # NEW 28-9-2017
 		
@@ -781,34 +781,45 @@ class PixelDA(object):
 		return
 
 
-	def deploy_transform(self, save2file="../domain_adapted/generated.npy", stop_after=None):
+	def deploy_transform(self, save2file="../domain_adapted/generated.npy", noise_range=5.0, separate_cls=True, stop_after=None, seed=None):
 		dirpath = "/".join(save2file.split("/")[:-1])
 		if not os.path.exists(dirpath):
 			os.makedirs(dirpath)
 
 		dirname = "/".join(save2file.split("/")[:-1])
-
 		
-		if stop_after is not None:
-			predict_steps = int(stop_after/32)
-		else:
-			predict_steps = stop_after
-
-		noise_vec = np.random.normal(0,1, self.noise_size[0])
-		assert 1==2
+		# noise_vec = np.random.normal(0,1, self.noise_size[0])
+		
 		# np.random.rand(n_sample, self.noise_size[0]) # TODO 6/5/2018
-
 		print("Performing Pixel-level domain adaptation on original images...")
-		adaptaed_images = self.generator.predict([self.data_loader.mnist_X[:32*predict_steps], np.tile(noise_vec, (32*predict_steps,1))], batch_size=32) #, steps=predict_steps
-		# self.data_loader.mnistm_X[:stop_after]
-		print("+ Done.")
-		print("Saving transformed images to file {}".format(save2file))
-		np.save(save2file, adaptaed_images)
+		if separate_cls:
+			for mnist_cls in tqdm(range(10)):
 
-		noise_vec_filepath = os.path.join(dirname, "noise_vectors.npy")
-		print("Saving random noise (seed) to file {}".format(noise_vec_filepath))
-		np.save(noise_vec_filepath, noise_vec)
+				imgs_A = self.data_loader.mnist_X[self.data_loader.mnist_y==mnist_cls]
+				if stop_after is not None:
+					num_samples = int(stop_after)
+				else:
+					num_samples = len(imgs_A)
+				np.random.seed(seed)
+				noise_vec = (2*np.random.random((num_samples, self.noise_size[0]))-1)*noise_range
+				adaptaed_images = self.generator.predict([imgs_A[:num_samples], noise_vec], batch_size=32)
+				filename_by_cls = save2file[:-4]+"_{}.npy".format(mnist_cls)
+				np.save(filename_by_cls, adaptaed_images)
+		else:
 
+			imgs_A = self.data_loader.mnist_X
+			if stop_after is not None:
+					num_samples = int(stop_after)
+			else:
+				num_samples = len(imgs_A)
+
+			np.random.seed(seed)
+			noise_vec = (2*np.random.random((num_samples, self.noise_size[0]))-1)*noise_range
+			adaptaed_images = self.generator.predict([imgs_A[:num_samples], noise_vec], batch_size=32) 
+			print("Saving transformed images to file {}".format(save2file))
+			np.save(save2file, adaptaed_images)
+		
+		# np.save(save2file, adaptaed_images)
 		print("+ All done.")
 
 	def deploy_debug(self, save2file="../domain_adapted/debug.npy", sample_size=100, noise_number=128, 
@@ -932,8 +943,9 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
+	EXP_NAME = "Exp4_9"
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64, shift_label=True)
-	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/Exp4_14_1/config.dill")
+	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/{}/config.dill".format(EXP_NAME))
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset()
@@ -943,7 +955,10 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5', only_cls=True)
+	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/{}/Exp0.h5'.format(EXP_NAME), only_cls=False)
+
+
+
 	# gan.deploy_debug(save2file="../domain_adapted/Others/Liver/mask.npy", sample_size=100, noise_number=256, seed = 17)
 	# import ipdb; ipdb.set_trace()
 	# gan.train(epochs=100000, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp_shift1", save_weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5')
@@ -962,6 +977,8 @@ if __name__ == '__main__':
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4/debug_sobol.npy", sample_size=100, noise_number=256, seed = 17)
 	
+	gan.deploy_transform(save2file="../domain_adapted/MNIST_M/{}/generated.npy".format(EXP_NAME), noise_range=5.0, separate_cls=False, stop_after=None, seed=17)
+
 	# gan.deploy_classification()
 
 

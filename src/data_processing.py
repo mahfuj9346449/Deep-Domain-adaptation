@@ -106,3 +106,9 @@ class DataLoader():
 				return images, labels, masks
 
 		return images, labels
+
+
+if __name__ =="__main__":
+	print("Start")
+	datasets = DataLoader()
+	import ipdb; ipdb.set_trace()

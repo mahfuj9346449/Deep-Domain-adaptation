@@ -3,7 +3,7 @@ import os
 
 from scipy import signal
 from scipy.ndimage.filters import convolve
-
+from collections import defaultdict
 
 def ssim(img1, img2, cs_map=False):
 	"""Return the Structural Similarity Map corresponding to input images img1 
@@ -214,12 +214,14 @@ def MultiScaleSSIM(img1, img2, max_val=255, filter_size=11, filter_sigma=1.5,
 	return (np.prod(mcs[0:levels-1] ** weights[0:levels-1])*(mssim[levels-1] ** weights[levels-1])), bizarre
 
 
-def measure_MNIST_m_msssim(repeat=100, batch_size=10000):
+def measure_MNIST_m_msssim(repeat=100, batch_size=10000, separate_cls=True):
 	from time import time
 	from tqdm import tqdm
 	RootPath = os.path.expanduser("~")
 	print("Loading MNIST-M datasets...")
 	MNIST_M = np.load(os.path.join(RootPath, ".keras/datasets", "mnistm_x.npy"))
+	if separate_cls:
+		MNIST_M_labels = np.load(os.path.join(RootPath, ".keras/datasets", "mnistm_y.npy"))
 	print("+ Done.")
 	MNIST_M = MNIST_M - np.min(MNIST_M)
 	max_val = np.max(MNIST_M)
@@ -228,32 +230,136 @@ def measure_MNIST_m_msssim(repeat=100, batch_size=10000):
 	num = len(MNIST_M)
 
 	### Random select 100 images
-	st = time()
-	score = []
-	for ind in tqdm(range(repeat)):
-		# print("="*50)
-		index = np.random.choice(num, 2*batch_size, replace=False)
+	if not separate_cls:
+		st = time()
+		score = []
+		for ind in tqdm(range(repeat)):
+			# print("="*50)
+			index = np.random.choice(num, 2*batch_size, replace=False)
+			imgs1 = MNIST_M[index[:batch_size]]
+			imgs2 = MNIST_M[index[batch_size:]]
+			ssim_score, flag = MultiScaleSSIM(imgs1, imgs2, max_val=max_val)
+			if flag:
+				print(ind)
+			score.append(ssim_score)
 
-		imgs1 = MNIST_M[index[:batch_size]]
-		imgs2 = MNIST_M[index[batch_size:]]
+		print("Elapsed time for MS-SSIM evaluation: {}".format(time()-st))
+		print(score)
 		
-		ssim_score, flag = MultiScaleSSIM(imgs1, imgs2, max_val=max_val)
-		if flag:
-			print(ind)
-		score.append(ssim_score)
+		score = np.array(score)
+		moy = np.mean(score)
+		std = np.std(score)
 
-	print("Elapsed time for MS-SSIM evaluation: {}".format(time()-st))
-	print(score)
-	
-	score = np.array(score)
-	moy = np.mean(score)
-	std = np.std(score)
+		print("MS-SSIM simularity of MNIST-M (mean): {}".format(moy))
+		print("Confidence interval (99%): [{}, {}]".format(moy-2.576*std/np.sqrt(repeat), moy+2.576*std/np.sqrt(repeat)))
+		return score
+	else:
+		st = time()
+		score = defaultdict(lambda:[])
+		for ind in tqdm(range(repeat)):
+			for mnist_cls in range(10):
+				mnistm_x = MNIST_M[MNIST_M_labels==mnist_cls]
+				num = len(mnistm_x)
+				if 2*batch_size>=num:
 
-	print("MS-SSIM simularity of MNIST-M (mean): {}".format(moy))
-	print("Confidence interval (99%): [{}, {}]".format(moy-2.576*std/np.sqrt(repeat), moy+2.576*std/np.sqrt(repeat)))
-	return score
+					batch_size = int(num/2)
+					print("MNISTM class {} has only {} samples. Reduce batch size to {}".format(mnist_cls, num, batch_size))
 
+				index = np.random.choice(num, 2*batch_size, replace=False)
+				imgs1 = mnistm_x[index[:batch_size]]
+				imgs2 = mnistm_x[index[batch_size:]]
+				ssim_score, flag = MultiScaleSSIM(imgs1, imgs2, max_val=max_val)
+				# if flag:
+				# 	print(ind)
+				score[mnist_cls].append(ssim_score)
 
+		print("Elapsed time for MS-SSIM evaluation: {}".format(time()-st))
+		# print(score)
+		
+		for key in score:
+
+			score_per_cls = np.array(score[key])
+			moy = np.mean(score_per_cls)
+			std = np.std(score_per_cls)
+			print("="*50)
+			print("Class {} has MS-SSIM mean score {}".format(key, moy))
+			print("Confidence interval (99%): [{}, {}]".format(moy-2.576*std/np.sqrt(repeat), moy+2.576*std/np.sqrt(repeat)))
+
+		return score
+
+def measure_DA_MNISTm_msssim_from_file(filepath="",repeat=100, batch_size=10000, separate_cls=True):
+	print("Estimate MS-SSIM score for file: {}".format(filepath))
+	from time import time
+	from tqdm import tqdm
+	RootPath = os.path.expanduser("~")
+	print("Loading domain adapted MNIST-M datasets...")
+	MNIST_M_generated = np.load(os.path.join(RootPath, ".keras/datasets", "mnistm_x.npy"))
+	if separate_cls:
+		MNIST_M_labels = np.load(os.path.join(RootPath, ".keras/datasets", "mnistm_y.npy"))
+	print("+ Done.")
+	MNIST_M_generated = MNIST_M_generated - np.min(MNIST_M_generated)
+	max_val = np.max(MNIST_M_generated)
+	print("Maximum pixel-value of datasets: {}".format(max_val))
+	print("Minimum pixel-value of datasets: {}".format(np.min(MNIST_M_generated)))
+	num = len(MNIST_M_generated)
+
+	### Random select 100 images
+	if not separate_cls:
+		st = time()
+		score = []
+		for ind in tqdm(range(repeat)):
+			# print("="*50)
+			index = np.random.choice(num, 2*batch_size, replace=False)
+			imgs1 = MNIST_M_generated[index[:batch_size]]
+			imgs2 = MNIST_M_generated[index[batch_size:]]
+			ssim_score, flag = MultiScaleSSIM(imgs1, imgs2, max_val=max_val)
+			if flag:
+				print(ind)
+			score.append(ssim_score)
+
+		print("Elapsed time for MS-SSIM evaluation: {}".format(time()-st))
+		print(score)
+		
+		score = np.array(score)
+		moy = np.mean(score)
+		std = np.std(score)
+
+		print("MS-SSIM simularity of MNIST-M (mean): {}".format(moy))
+		print("Confidence interval (99%): [{}, {}]".format(moy-2.576*std/np.sqrt(repeat), moy+2.576*std/np.sqrt(repeat)))
+		return score
+	else:
+		st = time()
+		score = defaultdict(lambda:[])
+		for ind in tqdm(range(repeat)):
+			for mnist_cls in range(10):
+				mnistm_x = MNIST_M_generated[MNIST_M_labels==mnist_cls]
+				num = len(mnistm_x)
+				if 2*batch_size>=num:
+
+					batch_size = int(num/2)
+					print("MNISTM class {} has only {} samples. Reduce batch size to {}".format(mnist_cls, num, batch_size))
+
+				index = np.random.choice(num, 2*batch_size, replace=False)
+				imgs1 = mnistm_x[index[:batch_size]]
+				imgs2 = mnistm_x[index[batch_size:]]
+				ssim_score, flag = MultiScaleSSIM(imgs1, imgs2, max_val=max_val)
+				# if flag:
+				# 	print(ind)
+				score[mnist_cls].append(ssim_score)
+
+		print("Elapsed time for MS-SSIM evaluation: {}".format(time()-st))
+		# print(score)
+		
+		for key in score:
+
+			score_per_cls = np.array(score[key])
+			moy = np.mean(score_per_cls)
+			std = np.std(score_per_cls)
+			print("="*50)
+			print("Class {} has MS-SSIM mean score {}".format(key, moy))
+			print("Confidence interval (99%): [{}, {}]".format(moy-2.576*std/np.sqrt(repeat), moy+2.576*std/np.sqrt(repeat)))
+
+		return score
 
 if __name__=="__main__":
 	print("Start")
@@ -271,8 +377,9 @@ if __name__=="__main__":
 	print(MultiScaleSSIM(B,C, max_val=1.0))
 
 
-	# print("="*50)
-	# measure_MNIST_m_msssim(batch_size=50)
+	print("="*50)
+	# measure_MNIST_m_msssim(repeat=50, batch_size=1000, separate_cls=True)
+	measure_DA_MNISTm_msssim_from_file(filepath="../domain_adapted/MNIST_M/Exp4_14_1/generated.npy",repeat=10, batch_size=1000, separate_cls=True)
 
 
 

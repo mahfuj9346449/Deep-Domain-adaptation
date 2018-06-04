@@ -719,7 +719,7 @@ class PixelDA(_DLalgo):
 					self.sample_images(epoch*train_steps+iteration, save2dir=save_sample2dir) 
 
 					print("Sample images/History consumes time: {:.2f}".format(time()-sample_st))
-				if iteration % 50 == 0 and epoch>0:
+				if iteration % 50 == 0 and ((epoch+iteration)>0):
 					### Plot loss history so far
 					history_filepath_G = os.path.join(dirpath, "G_Losses.csv")
 					history_filepath_D = os.path.join(dirpath, "D_Losses.csv")
