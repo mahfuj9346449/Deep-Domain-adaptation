@@ -223,7 +223,7 @@ class PixelDA(_DLalgo):
 		valid_name = ["dense", "conv2d"]
 		layers_names = list(map(lambda layer:layer.name, model.layers))
 		num_layers = len(layers_names)
-		valid_index = list(map(lambda layer_name:(layer_name.split('_')[0] in self.valid_name), layers_names))
+		valid_index = list(map(lambda layer_name:(layer_name.split('_')[0] in valid_name), layers_names))
 		valid_index = np.arange(num_layers)[valid_index]
 
 		for i in valid_index:

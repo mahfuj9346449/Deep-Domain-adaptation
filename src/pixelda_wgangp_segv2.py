@@ -450,7 +450,7 @@ class PixelDA(_DLalgo):
 
 	def build_segmenter(self):
 		"""Segmenter layer"""
-		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=32, upconv=False, batchnorm=self.normalize_S)
+		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=64, upconv=False, batchnorm=self.normalize_S)
 		
 		return model
 
@@ -1058,15 +1058,15 @@ if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp8/config.dill")
 	gan.build_all_model()
-	# gan.summary()
+	gan.summary()
 	gan.load_dataset(dataset_name="CT", domain_A_folder="output17", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp13/Exp0.h5')
+	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp14/Exp0.h5'
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp14", save_weights_path=save_weights_path)
+		save_weights_path = '../Weights/CT2XperCT/Exp15_S/Exp0.h5'
+		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp15_S", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)
