@@ -91,7 +91,7 @@ except:
 
 from tqdm import tqdm
 import dill
-
+from DLalgors import _DLalgo
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
 	The Wasserstein loss function is very simple to calculate. In a standard GAN, the discriminator
@@ -152,7 +152,7 @@ def my_critic_acc(y_true, y_pred):
 	sign = K.less(K.zeros(1), y_true*y_pred)
 	return K.mean(sign)
 
-class PixelDA(object):
+class PixelDA(_DLalgo):
 	"""
 	Paradigm of GAN (keras implementation)
 
@@ -219,69 +219,17 @@ class PixelDA(object):
 		for key in kwargs:
 			setattr(self, key, kwargs[key])
 
-	def checktype(self, A):
-		key_to_be_purge = []
-		for key in A:
-			if not type(A[key]) in [list, dict, int, float, str, tuple, np.ndarray, bool]:
-				# A.pop(key)
-				key_to_be_purge.append(key)
-			else:
-				pass
-		print("Purging {} keys (in order to save config): {}.".format(len(key_to_be_purge), key_to_be_purge))
-		for key in key_to_be_purge:
-			A.pop(key)
-		print("+ Done.")
-		return A
+	def freeze_layers_kernel(self, model):
+		valid_name = ["dense", "conv2d"]
+		layers_names = list(map(lambda layer:layer.name, model.layers))
+		num_layers = len(layers_names)
+		valid_index = list(map(lambda layer_name:(layer_name.split('_')[0] in self.valid_name), layers_names))
+		valid_index = np.arange(num_layers)[valid_index]
 
-	def save_config(self, save2path="./test.dill", verbose=False):
-		"""
-		Save config at the end (before training) !
+		for i in valid_index:
+			## Remove 'kernel' from trainable weights before compile model !
+			model.layers[i].trainable_weights = model.layers[i].trainable_weights[1:]
 
-		"""
-		dirpath = "/".join(save2path.split("/")[:-1])
-
-		if not os.path.exists(dirpath):
-			os.makedirs(dirpath)
-		
-
-		# A shallow copy of self.__dict__
-		normal_attrs = dict(self.__dict__)
-		normal_attrs = self.checktype(normal_attrs)
-	
-		print("Saving {} class attributes to file {}...".format(len(normal_attrs), save2path))
-		with open(save2path, "wb") as file:
-			dill.dump(normal_attrs, file)
-		if verbose:
-			print("Normal attributes are: {}".format(normal_attrs))
-		print("+ Done.")
-		# print(len(self.__dict__))
-
-	def load_config(self, from_file="./test.dill", verbose=False):
-		"""
-		It's important to load config BEFORE build_all_model !
-		"""
-		print("Loading class attributes from file {}...".format(from_file))
-		with open(from_file, "rb") as file:
-			kwargs = dill.load(file)
-		## init default attributes
-		if verbose:
-			print("Number of attributes: {}".format(len(kwargs)))
-		self.__init__(**kwargs) # TODO !!!
-
-		## init attributes that are created in class functions
-		for key in kwargs:
-			setattr(self, key, kwargs[key])
-
-		print("+ Done.")
-
-	def print_config(self):
-		print("="*50)
-		print(" "*20+"Config")
-		print("="*50)
-		for key in self.__dict__:
-			print("{}: {}".format(key, self.__dict__[key]))
-
-		print("="*50)
 	def build_all_model(self):
 
 		# optimizer = Adam(0.0002, 0.5)
@@ -317,12 +265,17 @@ class PixelDA(object):
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
+
+			### One time experimence: Freeze all Discriminator's 'kernel'
+			self.freeze_layers_kernel(self.discriminator)
+
 			self.discriminator_model = Model(inputs=[img_B, fake_img],  #, avg_img
 											# loss_weights=[1,1,1], # useless, since we have multiply the penalization by GRADIENT_PENALTY_WEIGHT=10
 											outputs=[real_img_rating, fake_img_rating, avg_img_output])
 			self.discriminator_model.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
 				metrics=[my_critic_acc])
+			print(len(self.discriminator_model._collected_trainable_weights))
 		else:
 			self.discriminator.compile(loss='mse',
 				optimizer=optimizer,
@@ -943,9 +896,9 @@ class PixelDA(object):
 
 
 if __name__ == '__main__':
-	EXP_NAME = "Exp4_9"
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64, shift_label=True)
-	gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/{}/config.dill".format(EXP_NAME))
+	# EXP_NAME = "Exp4_9"
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64, shift_label=False)
+	# gan.load_config(verbose=True, from_file="../Weights/WGAN_GP/{}/config.dill".format(EXP_NAME))
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset()
@@ -955,13 +908,13 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_7/Exp0.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/{}/Exp0.h5'.format(EXP_NAME), only_cls=False)
+	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/{}/Exp0.h5'.format(EXP_NAME), only_cls=False)
 
 
 
 	# gan.deploy_debug(save2file="../domain_adapted/Others/Liver/mask.npy", sample_size=100, noise_number=256, seed = 17)
 	# import ipdb; ipdb.set_trace()
-	# gan.train(epochs=100000, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp_shift1", save_weights_path='../Weights/WGAN_GP/Exp_shift1/Exp0.h5')
+	gan.train(epochs=100000, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp_freeze", save_weights_path='../Weights/WGAN_GP/Exp_freeze/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp3", save_weights_path='../Weights/WGAN_GP/Exp3/Exp3.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_13", save_weights_path='../Weights/WGAN_GP/Exp4_13/Exp0.h5')
 	# gan.train(epochs=100000, batch_size=64, sample_interval=100, save_sample2dir="../samples/WGAN_GP/Exp4_14", save_weights_path='../Weights/WGAN_GP/Exp4_14/Exp0.h5')
@@ -977,7 +930,7 @@ if __name__ == '__main__':
 	# gan.deploy_transform(stop_after=400, save2file="../domain_adapted/Exp7/generated.npy")
 	# gan.deploy_debug(save2file="../domain_adapted/WGAN_GP/Exp4/debug_sobol.npy", sample_size=100, noise_number=256, seed = 17)
 	
-	gan.deploy_transform(save2file="../domain_adapted/MNIST_M/{}/generated.npy".format(EXP_NAME), noise_range=5.0, separate_cls=False, stop_after=None, seed=17)
+	# gan.deploy_transform(save2file="../domain_adapted/MNIST_M/{}/generated.npy".format(EXP_NAME), noise_range=5.0, separate_cls=False, stop_after=None, seed=17)
 
 	# gan.deploy_classification()
 

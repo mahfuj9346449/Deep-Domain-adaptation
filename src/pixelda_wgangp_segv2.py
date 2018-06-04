@@ -204,9 +204,9 @@ class PixelDA(_DLalgo):
 	1. Construct combined_D = D+G (train D only)
 		1a) G.trainable = False
 		1b) Compile combined_D
-	2. Construct combined_GC = D+G+C (train G and C: classifier)
+	2. Construct combined_GS = D+G+S (train G and C/S: classifier/Segmenter)
 		2a) Set D.trainable = False
-		2b) Compile combined_GC
+		2b) Compile combined_GS
 	
 	
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
@@ -333,7 +333,7 @@ class PixelDA(_DLalgo):
 
 
 		#################################### 
-		#### Build and Compile "combined_GC"
+		#### Build and Compile "combined_GS"
 		####################################
 
 		# For the combined model we will only train the generator and Segmenter
@@ -347,14 +347,14 @@ class PixelDA(_DLalgo):
 		mask_pred = self.seg(fake_B)
 
 		if self.use_Wasserstein:
-			self.combined_GC = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
-			self.combined_GC.compile(optimizer=optimizer, 
+			self.combined_GS = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
+			self.combined_GS.compile(optimizer=optimizer, 
 									loss=[wasserstein_loss, dice_coef_loss],
 									loss_weights=[self.loss_weights_adv, self.loss_weights_seg], 
 									metrics=['accuracy'])
 		else:
-			self.combined_GC = Model([img_A, noise], [valid, mask_pred])
-			self.combined_GC.compile(loss=['mse', dice_coef_loss],
+			self.combined_GS = Model([img_A, noise], [valid, mask_pred])
+			self.combined_GS.compile(loss=['mse', dice_coef_loss],
 										loss_weights=[self.loss_weights_adv, self.loss_weights_seg],
 										optimizer=optimizer,
 										metrics=['accuracy'])
@@ -454,7 +454,7 @@ class PixelDA(_DLalgo):
 		
 		return model
 
-	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_seg=False, seg_weights_path=None):
+	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_seg=False, only_G=False, seg_weights_path=None):
 		print("Loading pretrained weights from path: {} ...".format(weights_path))
 		if only_seg:
 			# self.seg.load_weights(weights_path, by_name=True) doesn't work !!
@@ -462,19 +462,27 @@ class PixelDA(_DLalgo):
 			# Solution:
 			# Build a model, load (all) weights, save sub model weigths as np.array, kill(clear session) model
 			# than finally, build new model, set sub model weights from pre-saved np.array !
-
-			self.combined_GC.load_weights(weights_path, by_name=True)
-			seg_weights = self.seg.get_weights()
+			if seg_weights_path is None:
+				print("Loading pretrained weights for Segmenter only...")
+				self.combined_GS.load_weights(weights_path, by_name=True)
+				pretrained_weights = self.seg.get_weights()
+				K.clear_session()
+				self.build_all_model()
+				self.seg.set_weights(pretrained_weights)
+			else:
+				print("Loading pretrained weights for Segmenter only (from path: {})".format(seg_weights_path))
+				self.seg.load_weights(seg_weights_path)
+		elif only_G:
+			print("Loading pretrained weights for Generator only...")
+			self.combined_GS.load_weights(weights_path, by_name=True)
+			pretrained_weights = self.generator.get_weights()
 			K.clear_session()
 			self.build_all_model()
-			self.seg.set_weights(seg_weights)
+			self.generator.set_weights(pretrained_weights)
 		else:
-			self.combined_GC.load_weights(weights_path, by_name=True)
+			self.combined_GS.load_weights(weights_path, by_name=True)
 
-		if seg_weights_path is not None:
-			## TODO 
-			raise
-			self.seg.load_weights(seg_weights_path)
+		
 		print("+ Done.")
 	def summary(self):
 		print("="*50)
@@ -493,16 +501,16 @@ class PixelDA(_DLalgo):
 			self.combined_D.summary()
 		print("="*50)
 		print("Combined model summary:")
-		self.combined_GC.summary()
+		self.combined_GS.summary()
 
 	def write_tensorboard_graph(self, to_dir="../logs", save_png2dir="../Model_graph"):
 		if not os.path.exists(save_png2dir):
 			os.makedirs(save_png2dir)
 		tensorboard = keras.callbacks.TensorBoard(log_dir=to_dir, histogram_freq=0, write_graph=True, write_images=False)
-		# tensorboard.set_model(self.combined_GC)
+		# tensorboard.set_model(self.combined_GS)
 		tensorboard.set_model(self.combined_D)
 		try:
-			plot_model(self.combined_GC, to_file=os.path.join(save_png2dir, "Combined_model.png"))
+			plot_model(self.combined_GS, to_file=os.path.join(save_png2dir, "Combined_model.png"))
 			plot_model(self.combined_D, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
 		except:
 			pass
@@ -638,7 +646,7 @@ class PixelDA(_DLalgo):
 				# noise_prior = np.random.rand(batch_size, self.noise_size[0]) #  6/5/2018
 
 				# Train the generator and Segmenter
-				g_loss = self.combined_GC.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) 
+				g_loss = self.combined_GS.train_on_batch([imgs_A, noise_prior], [valid, masks_A]) 
 
 
 				#-----------------------
@@ -691,18 +699,18 @@ class PixelDA(_DLalgo):
 						best_test_cls_acc = test_mean_acc
 						
 						if save_model:
-							self.combined_GC.save(save_weights_path)
+							self.combined_GS.save(save_weights_path)
 						else:
-							self.combined_GC.save_weights(save_weights_path)
+							self.combined_GS.save_weights(save_weights_path)
 						message += "  (best)"
 						 
 					elif test_mean_acc > second_best_cls_acc:
 						second_best_cls_acc = test_mean_acc
 						
 						if save_model:
-							self.combined_GC.save(save_weights_path)
+							self.combined_GS.save(save_weights_path)
 						else:
-							self.combined_GC.save_weights(save_weights_path[:-3]+"_bis.h5")
+							self.combined_GS.save_weights(save_weights_path[:-3]+"_bis.h5")
 						message += "  (second best)"
 
 					else:
@@ -731,7 +739,7 @@ class PixelDA(_DLalgo):
 					plot_D_statistic(D_hist, show=False, save2dir=dirpath)
 
 		#### NEW 24/5/2018
-		self.combined_GC.save_weights(save_weights_path[:-3]+"_final.h5")
+		self.combined_GS.save_weights(save_weights_path[:-3]+"_final.h5")
 			
 				
 
@@ -1060,10 +1068,10 @@ if __name__ == '__main__':
 		save_weights_path = '../Weights/CT2XperCT/Exp14/Exp0.h5'
 		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp14", save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
-		gan.combined_GC.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)
 	except:
-		gan.combined_GC.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
 		raise
 
 	# gan.deploy_segmentation()

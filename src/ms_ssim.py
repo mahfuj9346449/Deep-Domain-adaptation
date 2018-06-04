@@ -379,7 +379,7 @@ if __name__=="__main__":
 
 	print("="*50)
 	# measure_MNIST_m_msssim(repeat=50, batch_size=1000, separate_cls=True)
-	measure_DA_MNISTm_msssim_from_file(filepath="../domain_adapted/MNIST_M/Exp4_14_1/generated.npy",repeat=10, batch_size=1000, separate_cls=True)
+	measure_DA_MNISTm_msssim_from_file(filepath="../domain_adapted/MNIST_M/Exp4_11/generated.npy",repeat=10, batch_size=1000, separate_cls=True)
 
 
 
