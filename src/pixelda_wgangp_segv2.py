@@ -1063,18 +1063,19 @@ if __name__ == '__main__':
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp15_S/Exp0.h5'
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp15_S", save_weights_path=save_weights_path)
-	except KeyboardInterrupt:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-		sys.exit(0)
-	except:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-		raise
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	# try:
+	# 	save_weights_path = '../Weights/CT2XperCT/Exp15_S/Exp0.h5'
+	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp15_S", save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
 
-	# gan.deploy_segmentation()
+	gan.deploy_segmentation()
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')
