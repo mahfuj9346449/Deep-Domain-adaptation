@@ -23,7 +23,7 @@ if args.gpu == "simple":
 		os.environ["CUDA_VISIBLE_DEVICES"]="0"
 		sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 	else:
-		os.environ["CUDA_VISIBLE_DEVICES"]="0"
+		os.environ["CUDA_VISIBLE_DEVICES"]="1"
 		sys.path.append("/home/lulin/na4/my_packages")
 
 		import matplotlib as mpl 
@@ -31,26 +31,34 @@ if args.gpu == "simple":
 		# Qt_XKB_CONFIG_ROOT (add path ?)
 
 	import keras
+	import keras.backend as K
 	import tensorflow as tf
-	import keras.backend.tensorflow_backend as KTF
 
-	def get_session(gpu_fraction=0.5):
-		'''Assume that you have 6GB of GPU memory and want to allocate ~2GB'''
+	# import keras.backend.tensorflow_backend as KTF
 
-		num_threads = os.environ.get('OMP_NUM_THREADS')
-		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
-
-		if num_threads:
-			return tf.Session(config=tf.ConfigProto(
-				gpu_options=gpu_options, intra_op_parallelism_threads=num_threads))
+	def reset_session():
+		global machine_name
+		if machine_name == "lulin-QX-350-Series":
+			print("Using (local) machine: {}".format(machine_name))
+			gpu_fraction=0.2
 		else:
-			return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+			print("Using machine: {}".format(machine_name))
+			gpu_fraction=0.95
 
-	if machine_name == "lulin-QX-350-Series":
-		print("Using local machine..")
-		KTF.set_session(get_session(gpu_fraction=0.2)) # NEW 28-9-2017
-	else:
-		KTF.set_session(get_session(gpu_fraction=0.95)) # NEW 28-9-2017
+		
+		K.get_session().close()
+		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
+		sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+		K.set_session(sess)
+
+	reset_session()
+	# if machine_name == "lulin-QX-350-Series":
+	# 	print("Using local machine..")
+	# 	# keras_session = reset_session(gpu_fraction=0.2)
+	# 	# K.set_session(reset_session(gpu_fraction=0.2)) # NEW 28-9-2017
+	# 	reset_session(gpu_fraction=0.2)
+	# else:
+	# 	K.set_session(reset_session(gpu_fraction=0.95)) # NEW 28-9-2017
 		
 
 elif args.gpu == "multi":
@@ -246,7 +254,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -450,11 +458,11 @@ class PixelDA(_DLalgo):
 
 	def build_segmenter(self):
 		"""Segmenter layer"""
-		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=64, upconv=False, batchnorm=self.normalize_S)
+		model = UNet(self.img_shape, depth=3, dropout=0.5, start_ch=64, upsampling=False, batchnorm=self.normalize_S)
 		
 		return model
 
-	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_seg=False, only_G=False, seg_weights_path=None):
+	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_seg=False, only_G=False, only_G_S=False, seg_weights_path=None):
 		print("Loading pretrained weights from path: {} ...".format(weights_path))
 		if only_seg:
 			# self.seg.load_weights(weights_path, by_name=True) doesn't work !!
@@ -466,23 +474,41 @@ class PixelDA(_DLalgo):
 				print("Loading pretrained weights for Segmenter only...")
 				self.combined_GS.load_weights(weights_path, by_name=True)
 				pretrained_weights = self.seg.get_weights()
-				K.clear_session()
-				import time
-				raise
-				time.sleep(10)
+				reset_session()
 				self.build_all_model()
 				self.seg.set_weights(pretrained_weights)
 			else:
 				print("Loading pretrained weights for Segmenter only (from path: {})".format(seg_weights_path))
 				self.seg.load_weights(seg_weights_path)
 		elif only_G:
-			raise
+			# global keras_session
 			print("Loading pretrained weights for Generator only...")
 			self.combined_GS.load_weights(weights_path, by_name=True)
 			pretrained_weights = self.generator.get_weights()
-			K.clear_session()
+			# print(len(pretrained_weights))
+			# print(pretrained_weights[0])
+			# keras_session.close()
+			# KTF.reset_session().close()
+			# KTF.set_session(reset_session(gpu_fraction=0.2))
+			# K.clear_session()
+			reset_session()
+			
+			# tf.reset_default_graph()
+			
 			self.build_all_model()
 			self.generator.set_weights(pretrained_weights)
+			# print(self.seg.layers[1].name)
+			# print(self.seg.layers[1].get_weights()[1])
+			# print(self.generator.get_weights()[0])
+		elif only_G_S:
+			print("Loading pretrained weights for Generator and Segmenter only...")
+			self.combined_GS.load_weights(weights_path, by_name=True)
+			G_weights = self.generator.get_weights()
+			S_weights = self.seg.get_weights()
+			reset_session()
+			self.build_all_model()
+			self.generator.set_weights(G_weights)
+			self.seg.set_weights(S_weights)
 		else:
 			self.combined_GS.load_weights(weights_path, by_name=True)
 
@@ -803,10 +829,12 @@ class PixelDA(_DLalgo):
 		for j in range(c):
 			############ TODO  ############
 			# visualize image with adaptive histogram
-			axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			# axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			new_img = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1)
+			axs[2,j].imshow(new_img, cmap="gray")
 			axs[2,j].axis('off')	
 			# mask image with ground truth mask
-			axs[3,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+			axs[3,j].imshow(new_img, cmap="gray")
 			axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
 			axs[3,j].axis('off')
 				
@@ -1057,29 +1085,46 @@ def apply_adapt_hist(clipLimit=2.0, tileGridSize=(8, 8)):
 		cl1 = (cl1/255.)
 		return cl1
 	return adapt_hist_transform
+def render_image_by_mask(img, msk, clipping=0.1):
+	### img is the output of Generator, value in range (-1, 1)
+	### assuming that msk is already a binary mask
+	min_val = np.min(img)
+	img = img -min_val
+	max_val = np.max(img)
+	img = img/max_val
+	focus_object = img[msk.astype(bool)]
+	mean_intensity = np.mean(focus_object)
+	lower = mean_intensity-clipping
+	upper = mean_intensity+clipping
+	new_img = ((img - lower) / (upper - lower) * 255.)
+	new_img[new_img<0] = 0
+	new_img[new_img>255] = 255
+	return new_img.astype("uint8")
+
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp8/config.dill")
+	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
-	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp16_S/Exp0.h5', only_seg=True, only_G=True, seg_weights_path=None)
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
 	
-	try:
-		save_weights_path = '../Weights/CT2XperCT/Exp18_S/Exp0.h5'
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp18_S", save_weights_path=save_weights_path)
-	except KeyboardInterrupt:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-		sys.exit(0)
-	except:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-		raise
+	# try:
+	# 	save_weights_path = '../Weights/CT2XperCT/Exp18_S/Exp0.h5'
+	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp18_S", save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
 
 	# gan.deploy_segmentation()
 	####### MNIST-M segmentation

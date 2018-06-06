@@ -7,3 +7,4 @@ Weights/**
 logs/**
 *.pyc
 *.ipynb_checkpoints
+README.md

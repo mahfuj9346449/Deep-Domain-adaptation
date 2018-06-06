@@ -267,7 +267,7 @@ class PixelDA(_DLalgo):
 		if self.use_Wasserstein:
 
 			### One time experimence: Freeze all Discriminator's 'kernel'
-			self.freeze_layers_kernel(self.discriminator)
+			# self.freeze_layers_kernel(self.discriminator) # TODO
 
 			self.discriminator_model = Model(inputs=[img_B, fake_img],  #, avg_img
 											# loss_weights=[1,1,1], # useless, since we have multiply the penalization by GRADIENT_PENALTY_WEIGHT=10
@@ -275,7 +275,7 @@ class PixelDA(_DLalgo):
 			self.discriminator_model.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 				optimizer=optimizer,
 				metrics=[my_critic_acc])
-			print(len(self.discriminator_model._collected_trainable_weights))
+			# print(len(self.discriminator_model._collected_trainable_weights))
 		else:
 			self.discriminator.compile(loss='mse',
 				optimizer=optimizer,

@@ -64,22 +64,26 @@ if __name__=="__main__":
 	# 	K.set_value(alpha, K.get_value(alpha)*3)
 	##################################################
 
-	model = BasicModel()
-	my_optimizer = Adam(lr=1e-3)
-	d1 = model.layers[1]
-	kernel_weight_before = d1.get_weights()[0]
-	
-	d1.trainable_weights = d1.trainable_weights[1:]
-	model.compile(loss=["mse", "binary_crossentropy"], 
-		optimizer=my_optimizer, 
-		metrics=["acc"])
-	
-	
 
-	print(len(model._collected_trainable_weights))
-	score = model.fit(X,[Y, Y2], epochs=10, batch_size=10)
-	# print(score)
-	print("="*50)
-	kernel_weight_after = K.eval(model.layers[1].kernel)
-	print("Weights of kernel is freezed during training : {}".format(np.allclose(kernel_weight_before,kernel_weight_after)))
+
+	##################################################
+	### Example: Freeze 'kernel' during training
+	##################################################
+	# model = BasicModel()
+	# my_optimizer = Adam(lr=1e-3)
+	# d1 = model.layers[1]
+	# kernel_weight_before = d1.get_weights()[0]
+	# ##### Remove kernel from trainable_weights BEFORE compile model !!!
+	# d1.trainable_weights = d1.trainable_weights[1:]
+	# model.compile(loss=["mse", "binary_crossentropy"], 
+	# 	optimizer=my_optimizer, 
+	# 	metrics=["acc"])
+	# print(len(model._collected_trainable_weights))
+	# score = model.fit(X,[Y, Y2], epochs=10, batch_size=10)
+	# print("="*50)
+	# kernel_weight_after = K.eval(model.layers[1].kernel)
+	# print("Weights of kernel is freezed during training : {}".format(np.allclose(kernel_weight_before,kernel_weight_after)))
+
+
+	
 	# import ipdb;ipdb.set_trace()

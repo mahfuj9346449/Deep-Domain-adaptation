@@ -24,7 +24,7 @@ activation: activation function after convolutions
 dropout: amount of dropout in the contracting part
 batchnorm: adds Batch Normalization if true
 maxpool: use strided conv instead of maxpooling if false
-upconv: use transposed conv instead of upsamping + conv if false
+upsampling: use upsamping instead of transposed conv if True ## Modified 6/6/2018
 residual: add residual connections around each conv block if true
 '''
 
@@ -70,9 +70,9 @@ def level_block(m, dim, depth, inc, acti, do, bn, mp, up, res):
 ####### ===================================================================
 
 def UNet(img_shape, out_ch=1, start_ch=64, depth=4, inc_rate=2., activation='relu', 
-		 dropout=0.5, batchnorm=False, maxpool=True, upconv=True, residual=False):
+		 dropout=0.5, batchnorm=False, maxpool=True, upsampling=True, residual=False):
 	i = Input(shape=img_shape)
-	o = level_block(i, start_ch, depth, inc_rate, activation, dropout, batchnorm, maxpool, upconv, residual)
+	o = level_block(i, start_ch, depth, inc_rate, activation, dropout, batchnorm, maxpool, upsampling, residual)
 	o = Conv2D(out_ch, 1, activation='sigmoid')(o)
 	return Model(inputs=i, outputs=o)
 
@@ -103,7 +103,7 @@ if __name__ == "__main__":
 	# model = UNet((512,512, 1), start_ch=32) # baseline1
 	# model = UNet((512,512, 1), start_ch=64) # baseline2 (article)
 
-	# model = UNet((512,512), start_ch=64, upconv=False, dropout=0.3, batchnorm=True)
+	# model = UNet((512,512), start_ch=64, upsampling=False, dropout=0.3, batchnorm=True)
 
 
 
