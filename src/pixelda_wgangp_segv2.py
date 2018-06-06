@@ -23,7 +23,7 @@ if args.gpu == "simple":
 		os.environ["CUDA_VISIBLE_DEVICES"]="0"
 		sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 	else:
-		os.environ["CUDA_VISIBLE_DEVICES"]="1"
+		os.environ["CUDA_VISIBLE_DEVICES"]="0"
 		sys.path.append("/home/lulin/na4/my_packages")
 
 		import matplotlib as mpl 
@@ -134,7 +134,7 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 	#   ... and sqrt
 	gradient_l2_norm = K.sqrt(gradients_sqr_sum)
 	# compute lambda * (1 - ||grad||)^2 still for each single sample
-	gradient_penalty = gradient_penalty_weight * K.square(1 - gradient_l2_norm)
+	gradient_penalty = gradient_penalty_weight * K.square(2 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
 	# return the mean as loss over all the batch samples
 	return K.mean(gradient_penalty)
 
@@ -246,7 +246,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -258,7 +258,7 @@ class PixelDA(_DLalgo):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5 #Exp9: 5 #5 #7 #10
+			self.critic_steps = 5 #Exp15: 5 #Exp9: 5 #5 #7 #10
 		else:
 			self.critic_steps = 1
 		
@@ -467,12 +467,16 @@ class PixelDA(_DLalgo):
 				self.combined_GS.load_weights(weights_path, by_name=True)
 				pretrained_weights = self.seg.get_weights()
 				K.clear_session()
+				import time
+				raise
+				time.sleep(10)
 				self.build_all_model()
 				self.seg.set_weights(pretrained_weights)
 			else:
 				print("Loading pretrained weights for Segmenter only (from path: {})".format(seg_weights_path))
 				self.seg.load_weights(seg_weights_path)
 		elif only_G:
+			raise
 			print("Loading pretrained weights for Generator only...")
 			self.combined_GS.load_weights(weights_path, by_name=True)
 			pretrained_weights = self.generator.get_weights()
@@ -592,8 +596,8 @@ class PixelDA(_DLalgo):
 						if self.use_Wasserstein:
 							# TODO NEW TODO
 							ones = np.ones((self.batch_size, 1))
-							valid = ones+0.05*np.random.randn(self.batch_size, 1)
-							fake = -ones+0.05*np.random.randn(self.batch_size, 1) #- valid #np.ones((half_batch, 1)) # = - valid ? 
+							valid = ones#+0.05*np.random.randn(self.batch_size, 1)
+							fake = -ones#+0.05*np.random.randn(self.batch_size, 1) #- valid #np.ones((half_batch, 1)) # = - valid ? 
 							dummy_y = np.zeros((self.batch_size, 1)) # NEW
 						else:
 							valid = np.ones((self.batch_size, 1))
@@ -1059,23 +1063,25 @@ if __name__ == '__main__':
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp8/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output17", domain_B_folder="output16_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
 	gan.print_config()
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	# try:
-	# 	save_weights_path = '../Weights/CT2XperCT/Exp15_S/Exp0.h5'
-	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp15_S", save_weights_path=save_weights_path)
-	# except KeyboardInterrupt:
-	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-	# 	sys.exit(0)
-	# except:
-	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-	# 	raise
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
+	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp16_S/Exp0.h5', only_seg=True, only_G=True, seg_weights_path=None)
+	
+	try:
+		save_weights_path = '../Weights/CT2XperCT/Exp18_S/Exp0.h5'
+		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp18_S", save_weights_path=save_weights_path)
+	except KeyboardInterrupt:
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		sys.exit(0)
+	except:
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+		raise
 
-	gan.deploy_segmentation()
+	# gan.deploy_segmentation()
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')
