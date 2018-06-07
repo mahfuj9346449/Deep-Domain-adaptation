@@ -53,13 +53,14 @@ class MyDataset(object):
 	Here, we simply want to benefit data_augmentation generator from keras
 	Code temporary: TODO
 	"""
-	def __init__(self, paths= ["", ""], batch_size=32, augment=False, seed=1, domain="A"):
+	def __init__(self, paths= ["", ""], batch_size=32, augment=False, seed=1, domain="A", name="No Name"):
 		# super(MyDataset, self).__init__()
 		self.batch_size = batch_size
 		self.paths = paths
 		self.augment = augment
 		self.seed = seed
 		self.domain = domain
+		self.name = name
 		# train_generator, train_steps 
 
 		print("Loading file...")

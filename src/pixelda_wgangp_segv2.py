@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import scipy
-import os, sys
+import os, sys, glob
 # import keras
 # import tensorflow as tf
 # import keras.backend.tensorflow_backend as KTF
@@ -43,7 +43,7 @@ if args.gpu == "simple":
 			gpu_fraction=0.2
 		else:
 			print("Using machine: {}".format(machine_name))
-			gpu_fraction=0.95
+			gpu_fraction=0.97
 
 		
 		K.get_session().close()
@@ -103,7 +103,7 @@ from unet.U_net import UNet
 from unet.CT_generator import MyDataset
 from DLalgors import _DLalgo
 import cv2
-from statistic import plot_D_statistic, plot_G_statistic_seg
+from statistic import plot_D_statistic, plot_G_statistic_seg, plot_intensity_stat
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
 	The Wasserstein loss function is very simple to calculate. In a standard GAN, the discriminator
@@ -142,7 +142,8 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 	#   ... and sqrt
 	gradient_l2_norm = K.sqrt(gradients_sqr_sum)
 	# compute lambda * (1 - ||grad||)^2 still for each single sample
-	gradient_penalty = gradient_penalty_weight * K.square(2 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
+	# gradient_penalty = gradient_penalty_weight * K.square(2 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
+	gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-2) 
 	# return the mean as loss over all the batch samples
 	return K.mean(gradient_penalty)
 
@@ -249,8 +250,11 @@ class PixelDA(_DLalgo):
 		self.df = 64 
 		self.sf = 64
 
-		self.normalize_G = False
-		self.normalize_D = False
+		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+
+		self.normalize_G = True
+		self.normalize_D = True
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
@@ -266,7 +270,7 @@ class PixelDA(_DLalgo):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5 #Exp15: 5 #Exp9: 5 #5 #7 #10
+			self.critic_steps = 5 #Exp22: 1#5 #Exp15: 5 #Exp9: 5 #5 #7 #10
 		else:
 			self.critic_steps = 1
 		
@@ -281,9 +285,11 @@ class PixelDA(_DLalgo):
 
 		# optimizer = Adam(0.0002, 0.5)
 		# optimizer = Adam(0.0001, beta_1=0.5, beta_2=0.9) # Exp4, Exp8,9 
-		optimizer = Adam(0.00001, beta_1=0.0, beta_2=0.9) # Exp10
+		# optimizer = Adam(0.00001, beta_1=0.0, beta_2=0.9) # Exp10
 		# optimizer = Adam(0.0001, beta_1=0.0, beta_2=0.9) # Exp3 of CT2XperCT
-
+		self.optimizer_D = Adam(**self.opt_config_D) # Exp24
+		self.optimizer_G = Adam(**self.opt_config_G) # Exp24
+		
 		
 
 		# Build the discriminators
@@ -332,7 +338,7 @@ class PixelDA(_DLalgo):
 
 			self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
 									loss_weights=[1,1, self.GRADIENT_PENALTY_WEIGHT], # multiply gradient penalization loss by self.GRADIENT_PENALTY_WEIGHT
-									optimizer=optimizer,
+									optimizer=self.optimizer_D,
 									metrics=[my_critic_acc])
 		else:
 			self.discriminator.compile(loss='mse',
@@ -356,7 +362,7 @@ class PixelDA(_DLalgo):
 
 		if self.use_Wasserstein:
 			self.combined_GS = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
-			self.combined_GS.compile(optimizer=optimizer, 
+			self.combined_GS.compile(optimizer=self.optimizer_G,
 									loss=[wasserstein_loss, dice_coef_loss],
 									loss_weights=[self.loss_weights_adv, self.loss_weights_seg], 
 									metrics=['accuracy'])
@@ -378,11 +384,23 @@ class PixelDA(_DLalgo):
 		elif self.dataset_name == "CT":
 			bodys_filepath_A = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_A_folder)
 			masks_filepath_A = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_A_folder)
-			self.Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], batch_size=self.batch_size, augment=False, seed=17, domain="A")
+			self.Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], 
+										batch_size=self.batch_size, 
+										augment=False, 
+										seed=17, 
+										domain="A", 
+										name=domain_A_folder)
 
 			bodys_filepath_B = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_B_folder)
 			masks_filepath_B = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_B_folder)
-			self.Dataset_B = MyDataset(paths=[bodys_filepath_B, masks_filepath_B], batch_size=self.batch_size, augment=False, seed=17, domain="B")
+			self.Dataset_B = MyDataset(paths=[bodys_filepath_B, masks_filepath_B], 
+										batch_size=self.batch_size, 
+										augment=False, 
+										seed=17, 
+										domain="B",
+										name=domain_B_folder)
+			self.source_name = self.Dataset_A.name
+			self.target_name = self.Dataset_B.name
 		else:
 			pass
 		
@@ -394,13 +412,13 @@ class PixelDA(_DLalgo):
 			"""Residual block described in paper"""
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(layer_input)
 			if normalization:
-				d = InstanceNormalization()(d)
-				# d = BatchNormalization(momentum=0.8)(d) #  6/5/2018
+				# d = InstanceNormalization()(d)
+				d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
 			d = Activation('relu')(d)
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(d)
 			if normalization:
-				d = InstanceNormalization()(d)
-				# d = BatchNormalization(momentum=0.8)(d) #  6/5/2018
+				# d = InstanceNormalization()(d)
+				d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
 			d = Add()([d, layer_input])
 			return d
 
@@ -511,9 +529,12 @@ class PixelDA(_DLalgo):
 			self.seg.set_weights(S_weights)
 		else:
 			self.combined_GS.load_weights(weights_path, by_name=True)
-
-		
 		print("+ Done.")
+
+	def reset_history_in_folder(self, dirpath):
+		for filepath in glob.glob(os.path.join(dirpath, "*.csv")):
+			os.remove(filepath)
+		
 	def summary(self):
 		print("="*50)
 		print("Discriminator summary:")
@@ -754,26 +775,29 @@ class PixelDA(_DLalgo):
 				# If at save interval => save generated image samples
 				if iteration % sample_interval == 0 and iteration>0:
 					sample_st = time()
-					self.sample_images(epoch*train_steps+iteration, save2dir=save_sample2dir) 
+					self.sample_images(epoch*train_steps+iteration, save2dir=save_sample2dir, save_statistic2dir=dirpath) 
 
 					print("Sample images/History consumes time: {:.2f}".format(time()-sample_st))
 				if iteration % 50 == 0 and ((epoch+iteration) >0):
 					### Plot loss history so far
 					history_filepath_G = os.path.join(dirpath, "G_Losses.csv")
 					history_filepath_D = os.path.join(dirpath, "D_Losses.csv")
+					history_filepath_I = os.path.join(dirpath, "Intensity.csv") 
 					with open(history_filepath_G, "rb") as file:
 						G_hist = np.loadtxt(file, delimiter=",")
 					with open(history_filepath_D, "rb") as file:
 						D_hist = np.loadtxt(file, delimiter=",")
-					plot_G_statistic_seg(G_hist, show=False, save2dir=dirpath)
+					with open(history_filepath_I, "rb") as file:
+						I_hist = np.loadtxt(file, delimiter=",")
+					plot_G_statistic_seg(G_hist, show=False, save2dir=dirpath), plot_intensity_stat
 					plot_D_statistic(D_hist, show=False, save2dir=dirpath)
-
+					plot_intensity_stat(I_hist, show=False, save2dir=dirpath)
 		#### NEW 24/5/2018
 		self.combined_GS.save_weights(save_weights_path[:-3]+"_final.h5")
 			
 				
 
-	def sample_images(self, iter_num, save2dir="../samples"):
+	def sample_images(self, iter_num, save2dir="../samples", save_statistic2dir=None):
 
 		if not os.path.exists(save2dir):
 			os.makedirs(save2dir)
@@ -826,11 +850,15 @@ class PixelDA(_DLalgo):
 				#axs[i, j].set_title(titles[i])
 				axs[i,j].axis('off')
 				cnt += 1
+
+		## TODO
+		liver_intensities = []
 		for j in range(c):
 			############ TODO  ############
 			# visualize image with adaptive histogram
 			# axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
-			new_img = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1)
+			new_img, mean_intensity, std_intensity = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1, return_intensity=True)
+			liver_intensities.append(np.array([mean_intensity, std_intensity]))
 			axs[2,j].imshow(new_img, cmap="gray")
 			axs[2,j].axis('off')	
 			# mask image with ground truth mask
@@ -840,6 +868,9 @@ class PixelDA(_DLalgo):
 				
 		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
 		plt.close()
+		liver_intensities = np.array(liver_intensities)
+		with open(os.path.join(save_statistic2dir, "Intensity.csv"), "ab") as file:
+			np.savetxt(file, liver_intensities, delimiter=",")
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
 		raise ValueError("Not modified yet.")
@@ -1085,7 +1116,7 @@ def apply_adapt_hist(clipLimit=2.0, tileGridSize=(8, 8)):
 		cl1 = (cl1/255.)
 		return cl1
 	return adapt_hist_transform
-def render_image_by_mask(img, msk, clipping=0.1):
+def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 	### img is the output of Generator, value in range (-1, 1)
 	### assuming that msk is already a binary mask
 	min_val = np.min(img)
@@ -1099,32 +1130,39 @@ def render_image_by_mask(img, msk, clipping=0.1):
 	new_img = ((img - lower) / (upper - lower) * 255.)
 	new_img[new_img<0] = 0
 	new_img[new_img>255] = 255
-	return new_img.astype("uint8")
+	
+	if return_intensity:
+		return new_img.astype("uint8"), mean_intensity, np.std(focus_object)
+	else:
+		return new_img.astype("uint8")
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=8)#32
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
 	gan.print_config()
+	
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp16_S/Exp0.h5', only_seg=True, only_G=True, seg_weights_path=None)
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
 	
-	# try:
-	# 	save_weights_path = '../Weights/CT2XperCT/Exp18_S/Exp0.h5'
-	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/Exp18_S", save_weights_path=save_weights_path)
-	# except KeyboardInterrupt:
-	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-	# 	sys.exit(0)
-	# except:
-	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-	# 	raise
+	try:
+		EXP_NAME = "Exp24_1"
+		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
+		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
+		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+	except KeyboardInterrupt:
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		sys.exit(0)
+	except:
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+		raise
 
 	# gan.deploy_segmentation()
 	####### MNIST-M segmentation

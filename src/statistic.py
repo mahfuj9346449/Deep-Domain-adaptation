@@ -105,7 +105,18 @@ def plot_G_statistic_seg(history, show=False, cut=None, save2dir="../results/"):
 		plt.show()
 	plt.close()
 
-
+def plot_intensity_stat(history, show=False, save2dir="../results/"):
+	
+	length = len(history)
+	xaxis_scale = np.arange(0, length*10, 10) # 10, TODO
+	plt.figure()
+	plt.title("Liver intensity statistic")
+	plt.plot(xaxis_scale, history[:, 0], label="Mean intensity")
+	plt.plot(xaxis_scale, history[:, 1], label="Std intensity")
+	plt.xlabel("Iteration")
+	plt.legend(loc="best")
+	plt.savefig(os.path.join(save2dir, "intensity.png"))
+	plt.close()
 
 def download_image_for_gif(imgs_path="../domain_adapted/WGAN_GP/Exp4/debug_uniform_linear.npy"):
 	from tqdm import tqdm 
