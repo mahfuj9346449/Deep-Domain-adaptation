@@ -71,15 +71,18 @@ class _DLalgo(object):
 
 		print("+ Done.")
 
-	def print_config(self):
-		print("="*50)
-		print(" "*20+"Config")
-		print("="*50)
+	def print_config(self, return_message=True):
+		message = ""
+		message = message+"="*50+"\n"
+		message = message+" "*20+"Config"+"\n"
+		message = message+"="*50+"\n"
 		for key in self.__dict__:
-			print("{}: {}".format(key, self.__dict__[key]))
-
-		print("="*50)
-
+			message = message+"{}: {}".format(key, self.__dict__[key])+"\n"
+			
+		message = message+"="*50+"\n"
+		print(message)
+		if return_message:
+			return message
 
 class TestAlgo0(_DLalgo):
 	"""docstring for TestAlgo0"""

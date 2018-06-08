@@ -3,7 +3,7 @@ import scipy
 import os, sys, glob
 # import keras
 # import tensorflow as tf
-# import keras.backend.tensorflow_backend as KTF
+
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -34,7 +34,7 @@ if args.gpu == "simple":
 	import keras.backend as K
 	import tensorflow as tf
 
-	# import keras.backend.tensorflow_backend as KTF
+	
 
 	def reset_session():
 		global machine_name
@@ -76,7 +76,7 @@ from keras_contrib.layers.normalization import InstanceNormalization
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add
 from keras.layers.advanced_activations import LeakyReLU
-from keras.layers.convolutional import UpSampling2D, Conv2D
+from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
 from keras.models import Model, Sequential #load_model
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.utils import to_categorical
@@ -86,7 +86,7 @@ import matplotlib.pyplot as plt
 from data_processing import DataLoader
 import numpy as np
 from keras.layers.merge import _Merge
-from keras import backend as K
+
 from time import time
 from functools import partial
 from keras.utils import plot_model
@@ -142,8 +142,8 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 	#   ... and sqrt
 	gradient_l2_norm = K.sqrt(gradients_sqr_sum)
 	# compute lambda * (1 - ||grad||)^2 still for each single sample
-	# gradient_penalty = gradient_penalty_weight * K.square(2 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
-	gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-2) 
+	gradient_penalty = gradient_penalty_weight * K.square(2 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
+	# gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-2) 
 	# return the mean as loss over all the batch samples
 	return K.mean(gradient_penalty)
 
@@ -241,7 +241,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights (initial value)
-		self.lambda_adv = 20 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 1#5#10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1 
 		self.loss_weights_adv = K.variable(self.lambda_adv)
 		self.loss_weights_seg = K.variable(self.lambda_seg)
@@ -251,14 +251,14 @@ class PixelDA(_DLalgo):
 		self.sf = 64
 
 		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':5*1e-6, 'beta_1':0.0, 'beta_2':0.9}
 
-		self.normalize_G = True
+		self.normalize_G = False
 		self.normalize_D = True
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 30#30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -412,13 +412,13 @@ class PixelDA(_DLalgo):
 			"""Residual block described in paper"""
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(layer_input)
 			if normalization:
-				# d = InstanceNormalization()(d)
-				d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
+				d = InstanceNormalization()(d)
+				# d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
 			d = Activation('relu')(d)
 			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(d)
 			if normalization:
-				# d = InstanceNormalization()(d)
-				d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
+				d = InstanceNormalization()(d)
+				# d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
 			d = Add()([d, layer_input])
 			return d
 
@@ -492,7 +492,16 @@ class PixelDA(_DLalgo):
 				print("Loading pretrained weights for Segmenter only...")
 				self.combined_GS.load_weights(weights_path, by_name=True)
 				pretrained_weights = self.seg.get_weights()
-				reset_session()
+				# reset_session()
+				print("Clearing session....")
+				del self.loss_weights_adv
+				del self.loss_weights_seg
+				K.clear_session()
+				print("+ Done.")
+				## Re-initialize variable
+				self.loss_weights_adv = K.variable(self.lambda_adv)
+				self.loss_weights_seg = K.variable(self.lambda_seg)
+				# reset_session()
 				self.build_all_model()
 				self.seg.set_weights(pretrained_weights)
 			else:
@@ -506,10 +515,17 @@ class PixelDA(_DLalgo):
 			# print(len(pretrained_weights))
 			# print(pretrained_weights[0])
 			# keras_session.close()
-			# KTF.reset_session().close()
-			# KTF.set_session(reset_session(gpu_fraction=0.2))
+			#
 			# K.clear_session()
-			reset_session()
+			# reset_session()
+			print("Clearing session....")
+			del self.loss_weights_adv
+			del self.loss_weights_seg
+			K.clear_session()
+			print("+ Done.")
+			## Re-initialize variable
+			self.loss_weights_adv = K.variable(self.lambda_adv)
+			self.loss_weights_seg = K.variable(self.lambda_seg)
 			
 			# tf.reset_default_graph()
 			
@@ -522,11 +538,26 @@ class PixelDA(_DLalgo):
 			print("Loading pretrained weights for Generator and Segmenter only...")
 			self.combined_GS.load_weights(weights_path, by_name=True)
 			G_weights = self.generator.get_weights()
-			S_weights = self.seg.get_weights()
-			reset_session()
+			if seg_weights_path is None:
+				S_weights = self.seg.get_weights()
+			# reset_session()
+			print("Clearing session....")
+			del self.loss_weights_adv
+			del self.loss_weights_seg
+			K.clear_session()
+			print("+ Done.")
+			## Re-initialize variable
+			self.loss_weights_adv = K.variable(self.lambda_adv)
+			self.loss_weights_seg = K.variable(self.lambda_seg)
+			
 			self.build_all_model()
 			self.generator.set_weights(G_weights)
-			self.seg.set_weights(S_weights)
+			if seg_weights_path is None:
+				self.seg.set_weights(S_weights)
+			else:
+				print("Loading pretrained weights for Segmenter only (from path: {})".format(seg_weights_path))
+				self.seg.load_weights(seg_weights_path)
+			
 		else:
 			self.combined_GS.load_weights(weights_path, by_name=True)
 		print("+ Done.")
@@ -607,10 +638,12 @@ class PixelDA(_DLalgo):
 			print("="*50)
 			print("New epoch: {}".format(epoch))
 			print("="*50)
-			if epoch == 5:#2:
+			if (epoch%3 == 0) and (epoch<10):#2:
 				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
-			elif epoch == 10:#5:
-				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+			# elif epoch == 5:#5:
+			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+			# elif epoch == 10:#5:
+			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 
 			for iteration in range(train_steps):
 				if time_monitor and (iteration%10 ==0) and (iteration>0):
@@ -1025,7 +1058,7 @@ class PixelDA(_DLalgo):
 		np.save(save2file, np.stack(collections))
 		print("+ All done.")
 	
-	def deploy_segmentation(self, batch_size=32):
+	def deploy_segmentation(self, batch_size=32, save2file=""):
 		print("Predicting ... ")
 		if self.dataset_name == "MNIST":
 			pred_B = self.seg.predict(self.data_loader.mnistm_X, batch_size=batch_size)
@@ -1045,12 +1078,20 @@ class PixelDA(_DLalgo):
 
 		lower_bound = Moy - 2.576*Std/np.sqrt(N_samples) 
 		upper_bound = Moy + 2.576*Std/np.sqrt(N_samples)
-		print("="*50)
-		print("Unsupervised {} segmentation dice : {}".format(self.dataset_name, Moy))
-		print("Confidence interval (99%) [{}, {}]".format(lower_bound, upper_bound))
-		print("Length of confidence interval 99%: {}".format(upper_bound-lower_bound))
-		print("="*50)
-		print("+ All done.")
+		message = ""
+		config_message = self.print_config(return_message=True)+"\n"
+
+		message = message+"="*50+"\n"
+		message = message+"Unsupervised {} segmentation dice : {}".format(self.dataset_name, Moy)+"\n"
+		message = message+"Confidence interval (99%) [{}, {}]".format(lower_bound, upper_bound)+"\n"
+		message = message+"Length of confidence interval 99%: {}".format(upper_bound-lower_bound)+"\n"
+		message = message+"="*50+"\n"
+		message = message+"+ All done."+"\n"
+		print(message)
+		message = config_message + message
+		with open(save2file, "w") as file:
+			file.write(message)
+
 
 	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
 		raise ValueError("Not modified yet.")
@@ -1138,7 +1179,7 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=8)#32
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
 	gan.build_all_model()
 	gan.summary()
@@ -1148,23 +1189,35 @@ if __name__ == '__main__':
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
-	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp16_S/Exp0.h5', only_seg=True, only_G=True, seg_weights_path=None)
+	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
 	
 	try:
-		EXP_NAME = "Exp24_1"
+		EXP_NAME = "Exp31"
 		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+		gan.train(epochs=300, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)
 	except:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
 		raise
+	
 
-	# gan.deploy_segmentation()
+
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
+	# for num in ["25"]:#["12", "13", "14", "15_S"] # Done:["19", "20", "21", "22"]
+	# 	K.clear_session()
+	# 	EXP_NAME = "Exp{}".format(num)
+	# 	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/{}/config.dill".format(EXP_NAME))
+	# 	gan.build_all_model()
+	# 	gan.print_config()
+	# 	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
+	# 	gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format(EXP_NAME))
+
+
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')

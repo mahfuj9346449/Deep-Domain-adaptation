@@ -3,7 +3,7 @@ import scipy
 import os, sys, glob
 # import keras
 # import tensorflow as tf
-# import keras.backend.tensorflow_backend as KTF
+
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -34,7 +34,7 @@ if args.gpu == "simple":
 	import keras.backend as K
 	import tensorflow as tf
 
-	# import keras.backend.tensorflow_backend as KTF
+	
 
 	def reset_session():
 		global machine_name
@@ -86,7 +86,6 @@ import matplotlib.pyplot as plt
 from data_processing import DataLoader
 import numpy as np
 from keras.layers.merge import _Merge
-from keras import backend as K
 from time import time
 from functools import partial
 from keras.utils import plot_model
@@ -241,7 +240,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights (initial value)
-		self.lambda_adv = 20 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1 
 		self.loss_weights_adv = K.variable(self.lambda_adv)
 		self.loss_weights_seg = K.variable(self.lambda_seg)
@@ -251,7 +250,7 @@ class PixelDA(_DLalgo):
 		self.sf = 64
 		self.gf = 256
 		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':5*1e-6, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = True
 		self.normalize_D = False
@@ -502,7 +501,16 @@ class PixelDA(_DLalgo):
 				print("Loading pretrained weights for Segmenter only...")
 				self.combined_GS.load_weights(weights_path, by_name=True)
 				pretrained_weights = self.seg.get_weights()
-				reset_session()
+				# reset_session()
+				print("Clearing session....")
+				del self.loss_weights_adv
+				del self.loss_weights_seg
+				K.clear_session()
+				print("+ Done.")
+				## Re-initialize variable
+				self.loss_weights_adv = K.variable(self.lambda_adv)
+				self.loss_weights_seg = K.variable(self.lambda_seg)
+				# reset_session()
 				self.build_all_model()
 				self.seg.set_weights(pretrained_weights)
 			else:
@@ -516,10 +524,17 @@ class PixelDA(_DLalgo):
 			# print(len(pretrained_weights))
 			# print(pretrained_weights[0])
 			# keras_session.close()
-			# KTF.reset_session().close()
-			# KTF.set_session(reset_session(gpu_fraction=0.2))
+			#
 			# K.clear_session()
-			reset_session()
+			# reset_session()
+			print("Clearing session....")
+			del self.loss_weights_adv
+			del self.loss_weights_seg
+			K.clear_session()
+			print("+ Done.")
+			## Re-initialize variable
+			self.loss_weights_adv = K.variable(self.lambda_adv)
+			self.loss_weights_seg = K.variable(self.lambda_seg)
 			
 			# tf.reset_default_graph()
 			
@@ -533,7 +548,16 @@ class PixelDA(_DLalgo):
 			self.combined_GS.load_weights(weights_path, by_name=True)
 			G_weights = self.generator.get_weights()
 			S_weights = self.seg.get_weights()
-			reset_session()
+			# reset_session()
+			print("Clearing session....")
+			del self.loss_weights_adv
+			del self.loss_weights_seg
+			K.clear_session()
+			print("+ Done.")
+			## Re-initialize variable
+			self.loss_weights_adv = K.variable(self.lambda_adv)
+			self.loss_weights_seg = K.variable(self.lambda_seg)
+			
 			self.build_all_model()
 			self.generator.set_weights(G_weights)
 			self.seg.set_weights(S_weights)
@@ -604,7 +628,11 @@ class PixelDA(_DLalgo):
 
 		
 		### After "train_steps" iteration == One epoch
-		train_steps = int(max(self.Dataset_A.steps, self.Dataset_B.steps))
+		if self.dataset_name == "CT":
+			train_steps = int(max(self.Dataset_A.steps, self.Dataset_B.steps))
+		elif self.dataset_name == "MNIST":
+			train_steps = int(60000/self.batch_size)
+
 		print("Training steps per epoch: {}".format(train_steps))
 		
 		## Monitor to save model weights Lu
@@ -792,16 +820,20 @@ class PixelDA(_DLalgo):
 					### Plot loss history so far
 					history_filepath_G = os.path.join(dirpath, "G_Losses.csv")
 					history_filepath_D = os.path.join(dirpath, "D_Losses.csv")
-					history_filepath_I = os.path.join(dirpath, "Intensity.csv") 
+					
 					with open(history_filepath_G, "rb") as file:
 						G_hist = np.loadtxt(file, delimiter=",")
 					with open(history_filepath_D, "rb") as file:
 						D_hist = np.loadtxt(file, delimiter=",")
-					with open(history_filepath_I, "rb") as file:
-						I_hist = np.loadtxt(file, delimiter=",")
 					plot_G_statistic_seg(G_hist, show=False, save2dir=dirpath), plot_intensity_stat
 					plot_D_statistic(D_hist, show=False, save2dir=dirpath)
-					plot_intensity_stat(I_hist, show=False, save2dir=dirpath)
+
+					if self.dataset_name == "CT":
+						history_filepath_I = os.path.join(dirpath, "Intensity.csv") 
+						with open(history_filepath_I, "rb") as file:
+							I_hist = np.loadtxt(file, delimiter=",")
+						plot_intensity_stat(I_hist, show=False, save2dir=dirpath)
+					
 		#### NEW 24/5/2018
 		self.combined_GS.save_weights(save_weights_path[:-3]+"_final.h5")
 			
@@ -849,38 +881,53 @@ class PixelDA(_DLalgo):
 		# print(gen_imgs.shape)
 		#titles = ['Original', 'Translated']
 
-		# TODO
-		r = 4
-		fig, axs = plt.subplots(r, c, figsize=(3*c, 3*r))
-
-		cnt = 0
-		for i in range(2): # replace r by 2
-			for j in range(c):
-				axs[i,j].imshow(gen_imgs[cnt], cmap="gray")
-				#axs[i, j].set_title(titles[i])
-				axs[i,j].axis('off')
-				cnt += 1
+		
 
 		## TODO
-		liver_intensities = []
-		for j in range(c):
-			############ TODO  ############
-			# visualize image with adaptive histogram
-			# axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
-			new_img, mean_intensity, std_intensity = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1, return_intensity=True)
-			liver_intensities.append(np.array([mean_intensity, std_intensity]))
-			axs[2,j].imshow(new_img, cmap="gray")
-			axs[2,j].axis('off')	
-			# mask image with ground truth mask
-			axs[3,j].imshow(new_img, cmap="gray")
-			axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
-			axs[3,j].axis('off')
-				
-		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
-		plt.close()
-		liver_intensities = np.array(liver_intensities)
-		with open(os.path.join(save_statistic2dir, "Intensity.csv"), "ab") as file:
-			np.savetxt(file, liver_intensities, delimiter=",")
+		if self.dataset_name == "MNIST":
+
+			fig, axs = plt.subplots(r, c, figsize=(2*c, 2*r))
+			cnt = 0
+			for i in range(r):
+				for j in range(c):
+					axs[i,j].imshow(gen_imgs[cnt])
+					#axs[i, j].set_title(titles[i])
+					axs[i,j].axis('off')
+					cnt += 1
+			fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
+			plt.close()
+		elif self.dataset_name == "CT":
+			# TODO
+			r = 4
+			fig, axs = plt.subplots(r, c, figsize=(3*c, 3*r))
+
+			cnt = 0
+			for i in range(2): # replace r by 2
+				for j in range(c):
+					axs[i,j].imshow(gen_imgs[cnt], cmap="gray")
+					#axs[i, j].set_title(titles[i])
+					axs[i,j].axis('off')
+					cnt += 1
+
+			liver_intensities = []
+			for j in range(c):
+				############ TODO  ############
+				# visualize image with adaptive histogram
+				# axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+				new_img, mean_intensity, std_intensity = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1, return_intensity=True)
+				liver_intensities.append(np.array([mean_intensity, std_intensity]))
+				axs[2,j].imshow(new_img, cmap="gray")
+				axs[2,j].axis('off')	
+				# mask image with ground truth mask
+				axs[3,j].imshow(new_img, cmap="gray")
+				axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
+				axs[3,j].axis('off')
+					
+			fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
+			plt.close()
+			liver_intensities = np.array(liver_intensities)
+			with open(os.path.join(save_statistic2dir, "Intensity.csv"), "ab") as file:
+				np.savetxt(file, liver_intensities, delimiter=",")
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
 		raise ValueError("Not modified yet.")
@@ -1150,6 +1197,8 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(128,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/ExpNew1/config.dill")
+	
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset(dataset_name="MNIST")
@@ -1161,11 +1210,11 @@ if __name__ == '__main__':
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp16_S/Exp0.h5', only_seg=True, only_G=True, seg_weights_path=None)
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
+	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/ExpNew1_1/Exp0.h5', only_seg=True, only_G=False, seg_weights_path=None, only_G_S=False)
 	
 	try:
 		PROBLEM = "MNIST_SEG" #"CT2XperCT"
-		EXP_NAME = "ExpNew1"
+		EXP_NAME = "ExpNew4"
 		gan.reset_history_in_folder(dirpath='../Weights/{}/{}'.format(PROBLEM, EXP_NAME))
 		save_weights_path = '../Weights/{}/{}/Exp0.h5'.format(PROBLEM, EXP_NAME)
 		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/{}/{}".format(PROBLEM, EXP_NAME), save_weights_path=save_weights_path)
