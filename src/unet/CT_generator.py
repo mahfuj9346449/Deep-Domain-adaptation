@@ -65,11 +65,28 @@ class MyDataset(object):
 
 		print("Loading file...")
 		self.X_train, self.Y_train = np.load(paths[0]), np.load(paths[1])
-		print("Done.")
+		print("+ Done.")
 		print("Total datasets samples: {}".format(len(self.Y_train)))
-
+		print("Preprocessing: rescale pixel value to (-1,1)...")
+		self.X_train = self.preprocessing(self.X_train)
+		self.Y_train = self.preprocessing(self.Y_train)
+		print("+ Done.")
 
 		self.generator, self.steps = self.my_generator(batch_size=self.batch_size, augment=self.augment, seed=self.seed)
+
+	def preprocessing(self, X):
+		"""
+		Perform min-max normalization and rescale pixel value to (-1, 1) [IMIMIM] 
+		It's extremely important, since Generator has activation 'tanh' !!!
+
+		"""
+		min_val = np.min(X) # scalar
+		max_val = np.max(X) # scalar
+
+		newX = (X - min_val)/(max_val-min_val) 
+		newX = 2*newX - 1
+		return newX
+
 
 	def my_generator(self, batch_size=32, augment=False, seed=1):
 		# we create two instances with the same arguments

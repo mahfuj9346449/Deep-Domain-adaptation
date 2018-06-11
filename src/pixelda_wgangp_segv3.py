@@ -114,7 +114,7 @@ def wasserstein_loss(y_true, y_pred):
 	Note that the nature of this loss means that it can be (and frequently will be) less than 0."""
 	return -K.mean(y_true * y_pred)
 
-def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_weight):
+def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_weight, singular_value=1.0, method="one_side"):
 	"""Calculates the gradient penalty loss for a batch of "averaged" samples.
 	In Improved WGANs, the 1-Lipschitz constraint is enforced by adding a term to the loss function
 	that penalizes the network if the gradient norm moves away from 1. However, it is impossible to evaluate
@@ -141,8 +141,10 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 	#   ... and sqrt
 	gradient_l2_norm = K.sqrt(gradients_sqr_sum)
 	# compute lambda * (1 - ||grad||)^2 still for each single sample
-	gradient_penalty = gradient_penalty_weight * K.square(1 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
-	# gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-2) 
+	if method =="two_sides":
+		gradient_penalty = gradient_penalty_weight * K.square(singular_value - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
+	elif method == "one_side":
+		gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-singular_value)
 	# return the mean as loss over all the batch samples
 	return K.mean(gradient_penalty)
 
@@ -279,8 +281,9 @@ class PixelDA(_DLalgo):
 		else:
 			self.critic_steps = 1
 		
+		self.gp_method = "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 5#Exp12: 10#10#5 #10 As the paper
-
+		self.singular_value = 1.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -334,7 +337,9 @@ class PixelDA(_DLalgo):
 		# of the function with the averaged samples here.
 		partial_gp_loss = partial(gradient_penalty_loss,
 					  averaged_samples=avg_img,
-					  gradient_penalty_weight=1.0)
+					  gradient_penalty_weight=1.0,
+					  singular_value=self.singular_value,
+					  method=self.gp_method)
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
@@ -547,7 +552,8 @@ class PixelDA(_DLalgo):
 			print("Loading pretrained weights for Generator and Segmenter only...")
 			self.combined_GS.load_weights(weights_path, by_name=True)
 			G_weights = self.generator.get_weights()
-			S_weights = self.seg.get_weights()
+			if seg_weights_path is None:
+				S_weights = self.seg.get_weights()
 			# reset_session()
 			print("Clearing session....")
 			del self.loss_weights_adv
@@ -560,7 +566,12 @@ class PixelDA(_DLalgo):
 			
 			self.build_all_model()
 			self.generator.set_weights(G_weights)
-			self.seg.set_weights(S_weights)
+			if seg_weights_path is None:
+				self.seg.set_weights(S_weights)
+			else:
+				print("Loading pretrained weights for Segmenter only (from path: {})".format(seg_weights_path))
+				self.seg.load_weights(seg_weights_path)
+			
 		else:
 			self.combined_GS.load_weights(weights_path, by_name=True)
 		print("+ Done.")
@@ -1082,7 +1093,7 @@ class PixelDA(_DLalgo):
 		np.save(save2file, np.stack(collections))
 		print("+ All done.")
 	
-	def deploy_segmentation(self, batch_size=32):
+	def deploy_segmentation(self, batch_size=32, save2file=""):
 		print("Predicting ... ")
 		if self.dataset_name == "MNIST":
 			pred_B = self.seg.predict(self.data_loader.mnistm_X, batch_size=batch_size)
@@ -1102,12 +1113,20 @@ class PixelDA(_DLalgo):
 
 		lower_bound = Moy - 2.576*Std/np.sqrt(N_samples) 
 		upper_bound = Moy + 2.576*Std/np.sqrt(N_samples)
-		print("="*50)
-		print("Unsupervised {} segmentation dice : {}".format(self.dataset_name, Moy))
-		print("Confidence interval (99%) [{}, {}]".format(lower_bound, upper_bound))
-		print("Length of confidence interval 99%: {}".format(upper_bound-lower_bound))
-		print("="*50)
-		print("+ All done.")
+		message = ""
+		config_message = self.print_config(return_message=True)+"\n"
+
+		message = message+"="*50+"\n"
+		message = message+"Unsupervised {} segmentation dice : {}".format(self.dataset_name, Moy)+"\n"
+		message = message+"Confidence interval (99%) [{}, {}]".format(lower_bound, upper_bound)+"\n"
+		message = message+"Length of confidence interval 99%: {}".format(upper_bound-lower_bound)+"\n"
+		message = message+"="*50+"\n"
+		message = message+"+ All done."+"\n"
+		print(message)
+		message = config_message + message
+		with open(save2file, "w") as file:
+			file.write(message)
+
 
 	def deploy_demo_only(self, save2file="../domain_adapted/WGAN_GP/Exp4/demo.npy", sample_size=25, noise_number=512, linspace_size=10.0):
 		raise ValueError("Not modified yet.")
@@ -1224,6 +1243,7 @@ if __name__ == '__main__':
 	except:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
 		raise
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp30"))
 
 	# gan.deploy_segmentation()
 	####### MNIST-M segmentation

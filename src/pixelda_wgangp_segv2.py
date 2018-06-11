@@ -86,7 +86,6 @@ import matplotlib.pyplot as plt
 from data_processing import DataLoader
 import numpy as np
 from keras.layers.merge import _Merge
-
 from time import time
 from functools import partial
 from keras.utils import plot_model
@@ -115,7 +114,7 @@ def wasserstein_loss(y_true, y_pred):
 	Note that the nature of this loss means that it can be (and frequently will be) less than 0."""
 	return -K.mean(y_true * y_pred)
 
-def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_weight):
+def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_weight, singular_value=1.0, method="one_side"):
 	"""Calculates the gradient penalty loss for a batch of "averaged" samples.
 	In Improved WGANs, the 1-Lipschitz constraint is enforced by adding a term to the loss function
 	that penalizes the network if the gradient norm moves away from 1. However, it is impossible to evaluate
@@ -142,8 +141,10 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 	#   ... and sqrt
 	gradient_l2_norm = K.sqrt(gradients_sqr_sum)
 	# compute lambda * (1 - ||grad||)^2 still for each single sample
-	gradient_penalty = gradient_penalty_weight * K.square(2 - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
-	# gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-2) 
+	if method =="two_sides":
+		gradient_penalty = gradient_penalty_weight * K.square(singular_value - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
+	elif method == "one_side":
+		gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-singular_value)
 	# return the mean as loss over all the batch samples
 	return K.mean(gradient_penalty)
 
@@ -274,8 +275,9 @@ class PixelDA(_DLalgo):
 		else:
 			self.critic_steps = 1
 		
+		self.gp_method = "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 5#Exp12: 10#10#5 #10 As the paper
-
+		self.singular_value = 1.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -329,7 +331,9 @@ class PixelDA(_DLalgo):
 		# of the function with the averaged samples here.
 		partial_gp_loss = partial(gradient_penalty_loss,
 					  averaged_samples=avg_img,
-					  gradient_penalty_weight=1.0)
+					  gradient_penalty_weight=1.0,
+					  singular_value=self.singular_value,
+					  method=self.gp_method)
 		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
@@ -450,7 +454,7 @@ class PixelDA(_DLalgo):
 
 		def d_layer(layer_input, filters, f_size=4, normalization=self.normalize_D):
 			"""Discriminator layer"""
-			d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
+			d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same', kernel_initializer=self.my_initializer())(layer_input)
 			d = LeakyReLU(alpha=0.2)(d)
 			if normalization:
 				d = InstanceNormalization()(d)
@@ -467,9 +471,9 @@ class PixelDA(_DLalgo):
 			validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 		else:
 			if self.use_Wasserstein: # NEW 8/5/2018
-				validity = Dense(1, activation=None)(Flatten()(d4)) # he_normal ?? 
+				validity = Dense(1, activation=None, kernel_initializer=self.my_initializer())(Flatten()(d4)) # he_normal ?? 
 			else:
-				validity = Dense(1, activation='sigmoid')(Flatten()(d4))
+				validity = Dense(1, activation='sigmoid', kernel_initializer=self.my_initializer())(Flatten()(d4))
 			
 
 		return Model(img, validity)
@@ -625,7 +629,11 @@ class PixelDA(_DLalgo):
 
 		
 		### After "train_steps" iteration == One epoch
-		train_steps = int(max(self.Dataset_A.steps, self.Dataset_B.steps))
+		if self.dataset_name == "CT":
+			train_steps = int(max(self.Dataset_A.steps, self.Dataset_B.steps))
+		elif self.dataset_name == "MNIST":
+			train_steps = int(60000/self.batch_size)
+
 		print("Training steps per epoch: {}".format(train_steps))
 		
 		## Monitor to save model weights Lu
@@ -815,16 +823,20 @@ class PixelDA(_DLalgo):
 					### Plot loss history so far
 					history_filepath_G = os.path.join(dirpath, "G_Losses.csv")
 					history_filepath_D = os.path.join(dirpath, "D_Losses.csv")
-					history_filepath_I = os.path.join(dirpath, "Intensity.csv") 
+					
 					with open(history_filepath_G, "rb") as file:
 						G_hist = np.loadtxt(file, delimiter=",")
 					with open(history_filepath_D, "rb") as file:
 						D_hist = np.loadtxt(file, delimiter=",")
-					with open(history_filepath_I, "rb") as file:
-						I_hist = np.loadtxt(file, delimiter=",")
 					plot_G_statistic_seg(G_hist, show=False, save2dir=dirpath), plot_intensity_stat
 					plot_D_statistic(D_hist, show=False, save2dir=dirpath)
-					plot_intensity_stat(I_hist, show=False, save2dir=dirpath)
+
+					if self.dataset_name == "CT":
+						history_filepath_I = os.path.join(dirpath, "Intensity.csv") 
+						with open(history_filepath_I, "rb") as file:
+							I_hist = np.loadtxt(file, delimiter=",")
+						plot_intensity_stat(I_hist, show=False, save2dir=dirpath)
+					
 		#### NEW 24/5/2018
 		self.combined_GS.save_weights(save_weights_path[:-3]+"_final.h5")
 			
@@ -868,42 +880,59 @@ class PixelDA(_DLalgo):
 			# Rescale images from (-1, 1) to (0, 1)
 			gen_imgs = 0.5 * gen_imgs + 0.5
 		elif self.dataset_name == "CT":
+			# Rescale images from (-1, 1) to (0, 1)  11/6/2018 NEW TODO IMIMIM
+			gen_imgs = 0.5 * gen_imgs + 0.5 ## 11/6/2018 NEW TODO IMIMIM
 			gen_imgs = np.squeeze(gen_imgs)
 		# print(gen_imgs.shape)
 		#titles = ['Original', 'Translated']
 
-		# TODO
-		r = 4
-		fig, axs = plt.subplots(r, c, figsize=(3*c, 3*r))
-
-		cnt = 0
-		for i in range(2): # replace r by 2
-			for j in range(c):
-				axs[i,j].imshow(gen_imgs[cnt], cmap="gray")
-				#axs[i, j].set_title(titles[i])
-				axs[i,j].axis('off')
-				cnt += 1
+		
 
 		## TODO
-		liver_intensities = []
-		for j in range(c):
-			############ TODO  ############
-			# visualize image with adaptive histogram
-			# axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
-			new_img, mean_intensity, std_intensity = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1, return_intensity=True)
-			liver_intensities.append(np.array([mean_intensity, std_intensity]))
-			axs[2,j].imshow(new_img, cmap="gray")
-			axs[2,j].axis('off')	
-			# mask image with ground truth mask
-			axs[3,j].imshow(new_img, cmap="gray")
-			axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
-			axs[3,j].axis('off')
-				
-		fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
-		plt.close()
-		liver_intensities = np.array(liver_intensities)
-		with open(os.path.join(save_statistic2dir, "Intensity.csv"), "ab") as file:
-			np.savetxt(file, liver_intensities, delimiter=",")
+		if self.dataset_name == "MNIST":
+
+			fig, axs = plt.subplots(r, c, figsize=(2*c, 2*r))
+			cnt = 0
+			for i in range(r):
+				for j in range(c):
+					axs[i,j].imshow(gen_imgs[cnt])
+					#axs[i, j].set_title(titles[i])
+					axs[i,j].axis('off')
+					cnt += 1
+			fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
+			plt.close()
+		elif self.dataset_name == "CT":
+			# TODO
+			r = 4
+			fig, axs = plt.subplots(r, c, figsize=(3*c, 3*r))
+
+			cnt = 0
+			for i in range(2): # replace r by 2
+				for j in range(c):
+					axs[i,j].imshow(gen_imgs[cnt], cmap="gray")
+					#axs[i, j].set_title(titles[i])
+					axs[i,j].axis('off')
+					cnt += 1
+
+			liver_intensities = []
+			for j in range(c):
+				############ TODO  ############
+				# visualize image with adaptive histogram
+				# axs[2,j].imshow(apply_adapt_hist()(gen_imgs[j+c*1]), cmap="gray")
+				new_img, mean_intensity, std_intensity = render_image_by_mask(gen_imgs[j+c*1], masks_A[j], clipping=0.1, return_intensity=True)
+				liver_intensities.append(np.array([mean_intensity, std_intensity]))
+				axs[2,j].imshow(new_img, cmap="gray")
+				axs[2,j].axis('off')	
+				# mask image with ground truth mask
+				axs[3,j].imshow(new_img, cmap="gray")
+				axs[3,j].imshow(masks_A[j], aspect="equal", cmap="Blues", alpha=0.4)
+				axs[3,j].axis('off')
+					
+			fig.savefig(os.path.join(save2dir, "{}.png".format(iter_num)))
+			plt.close()
+			liver_intensities = np.array(liver_intensities)
+			with open(os.path.join(save_statistic2dir, "Intensity.csv"), "ab") as file:
+				np.savetxt(file, liver_intensities, delimiter=",")
 
 	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
 		raise ValueError("Not modified yet.")
@@ -1196,7 +1225,7 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	
 	try:
-		EXP_NAME = "Exp31"
+		EXP_NAME = "Exp32"
 		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
 		gan.train(epochs=300, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
