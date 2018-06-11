@@ -74,7 +74,7 @@ else:
 from keras.datasets import mnist
 from keras_contrib.layers.normalization import InstanceNormalization
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
-from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add
+from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add, Lambda
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
 from keras.models import Model, Sequential #load_model
@@ -362,7 +362,11 @@ class PixelDA(_DLalgo):
 		# Discriminator determines validity of translated images
 		valid = self.discriminator(fake_B) # fake_B_rating
 		# Segment the translated image
-		mask_pred = self.seg(fake_B)
+		### 11/6/2018 NEW Rescale pixel value [IMIMIM] TODO
+		if self.dataset_name == "CT":
+			mask_pred = self.seg(Lambda(lambda x: 0.5*x+0.5)(fake_B)) # Only valid for pretrained U-net, not for MNIST
+		elif self.dataset_name == "MNIST":
+			mask_pred = self.seg(fake_B)
 
 		if self.use_Wasserstein:
 			self.combined_GS = Model(inputs=[img_A, noise], outputs=[valid, mask_pred])
@@ -752,6 +756,7 @@ class PixelDA(_DLalgo):
 					#-----------------------
 					# Evaluation (domain B)
 					#-----------------------
+					imgs_B = 0.5*imgs_B + 0.5 # rescale from (-1,1) to (0,1) ### 11/6/2018 NEW TODO IMIM
 					pred_B = self.seg.predict(imgs_B) ### TODO TODO (not compiled yet ???)
 					_, test_acc = dice_predict(masks_B, pred_B) 
 					# Add accuracy to list of last 100 accuracy measurements
@@ -949,6 +954,7 @@ class PixelDA(_DLalgo):
 		fake_B = self.generator([img_A, noise])
 
 		# Segment the translated image
+		raise ValueError("Need to modify the following line..")
 		mask_pred = self.seg(fake_B)
 
 		self.generator.trainable = False
@@ -1095,7 +1101,9 @@ class PixelDA(_DLalgo):
 			Moy = np.mean(precision)
 			Std = np.std(precision)
 		elif self.dataset_name == "CT":
-			pred_B = self.seg.predict(self.Dataset_B.X_train, batch_size=batch_size)
+			rescaled_B = self.Dataset_B.X_train # pixel value in range (-1,1) 11/6/2018 NEW
+			rescaled_B = 0.5*rescaled_B+0.5
+			pred_B = self.seg.predict(rescaled_B, batch_size=batch_size)
 			gt_B = self.Dataset_B.Y_train
 			dice_all, dice_mean = dice_predict(gt_B, pred_B)
 			Moy = dice_mean
