@@ -1180,7 +1180,7 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp30/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
@@ -1188,10 +1188,12 @@ if __name__ == '__main__':
 	
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp30/Exp0.h5')
+	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
+
+	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	
 	try:
 		EXP_NAME = "Exp31"
@@ -1204,7 +1206,7 @@ if __name__ == '__main__':
 	except:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
 		raise
-	
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp30"))
 
 
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
