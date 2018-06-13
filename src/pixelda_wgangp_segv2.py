@@ -144,7 +144,9 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 	if method =="two_sides":
 		gradient_penalty = gradient_penalty_weight * K.square(singular_value - gradient_l2_norm) #TODO TODO TODO IMIMIM 6/6/2018 # orig: K.square(1 - gradient_l2_norm)
 	elif method == "one_side":
-		gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-singular_value)
+		# gradient_penalty = gradient_penalty_weight * K.relu(gradient_l2_norm-singular_value)
+		gradient_penalty = gradient_penalty_weight * K.square(K.relu(gradient_l2_norm-singular_value))
+		
 	# return the mean as loss over all the batch samples
 	return K.mean(gradient_penalty)
 
@@ -242,7 +244,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights (initial value)
-		self.lambda_adv = 1#5#10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 20#5#10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1 
 		self.loss_weights_adv = K.variable(self.lambda_adv)
 		self.loss_weights_seg = K.variable(self.lambda_seg)
@@ -252,7 +254,7 @@ class PixelDA(_DLalgo):
 		self.sf = 64
 
 		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':5*1e-6, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = False
 		self.normalize_D = True
@@ -275,9 +277,9 @@ class PixelDA(_DLalgo):
 		else:
 			self.critic_steps = 1
 		
-		self.gp_method = "one_side"
-		self.GRADIENT_PENALTY_WEIGHT = 5#Exp12: 10#10#5 #10 As the paper
-		self.singular_value = 1.0
+		self.gp_method = "one_side" # "two_sides", "one_side"
+		self.GRADIENT_PENALTY_WEIGHT = 1#5 #Exp12: 10#10#5 #10 As the paper
+		self.singular_value = 5.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -652,10 +654,15 @@ class PixelDA(_DLalgo):
 			print("="*50)
 			print("New epoch: {}".format(epoch))
 			print("="*50)
-			if (epoch%3 == 0) and (epoch<10):#2:
-				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
-			# elif epoch == 5:#5:
+			# Exp30, 31
+			# if (epoch%3 == 0) and (epoch<10):#2:
 			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+
+			# Exp51 
+			if (epoch == 2):#2:
+				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+			elif epoch == 5: # 7 #5:
+				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 			# elif epoch == 10:#5:
 			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 
@@ -1219,7 +1226,7 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp30/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp23/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
@@ -1227,25 +1234,27 @@ if __name__ == '__main__':
 	
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp30/Exp0.h5')
-	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp52/Exp0.h5')
+	
 	
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
 
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	
-	try:
-		EXP_NAME = "Exp32"
-		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
-		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-		gan.train(epochs=300, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
-	except KeyboardInterrupt:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-		sys.exit(0)
-	except:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-		raise
-	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp30"))
+	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
+	# try:
+	# 	EXP_NAME = "Exp52"
+	# 	gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
+	# 	save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
+	# 	gan.train(epochs=300, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
+
+
+	gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp52"))
 
 
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
