@@ -69,7 +69,6 @@ class MyDataset(object):
 		print("Total datasets samples: {}".format(len(self.Y_train)))
 		print("Preprocessing: rescale pixel value to (-1,1)...")
 		self.X_train = self.preprocessing(self.X_train)
-		self.Y_train = self.preprocessing(self.Y_train)
 		print("+ Done.")
 
 		self.generator, self.steps = self.my_generator(batch_size=self.batch_size, augment=self.augment, seed=self.seed)
@@ -143,15 +142,15 @@ if __name__ == "__main__":
 	print("Start")
 	from time import time
 
-
-	bodys_filepath_A = "/home/lulin/na4/src/output/output14_64x64/train/bodys.npy"
-	masks_filepath_A = "/home/lulin/na4/src/output/output14_64x64/train/liver_masks.npy"
+	FOLDER = "output18"
+	bodys_filepath_A = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(FOLDER)
+	masks_filepath_A = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(FOLDER)
 	Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], batch_size=32, augment=False, seed=17, domain="A")
 
 	# bodys_filepath_B = "/home/lulin/na4/src/output/output14_x_64x64/train/bodys.npy"
 	# masks_filepath_B = "/home/lulin/na4/src/output/output14_x_64x64/train/liver_masks.npy"
 	# Dataset_B = MyDataset(paths=[bodys_filepath_B, masks_filepath_B], batch_size=32, augment=False, seed=17, domain="B")
-		
+	import ipdb;ipdb.set_trace()
 	for _ in range(200):
 		img, mask = Dataset_A.next()
 		print(mask.shape)
