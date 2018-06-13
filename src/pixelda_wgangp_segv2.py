@@ -397,7 +397,8 @@ class PixelDA(_DLalgo):
 										augment=False, 
 										seed=17, 
 										domain="A", 
-										name=domain_A_folder)
+										name=domain_A_folder,
+										shuffle=True)
 
 			bodys_filepath_B = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_B_folder)
 			masks_filepath_B = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_B_folder)
@@ -406,7 +407,8 @@ class PixelDA(_DLalgo):
 										augment=False, 
 										seed=17, 
 										domain="B",
-										name=domain_B_folder)
+										name=domain_B_folder,
+										shuffle=True)
 			self.source_name = self.Dataset_A.name
 			self.target_name = self.Dataset_B.name
 		else:

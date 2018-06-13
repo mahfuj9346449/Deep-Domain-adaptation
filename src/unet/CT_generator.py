@@ -3,7 +3,7 @@ import os, sys
 import numpy as np
 
 from keras.preprocessing.image import ImageDataGenerator
-
+from sklearn.utils import shuffle as sk_shuffle
 # keras.preprocessing.image.ImageDataGenerator
 
 
@@ -53,7 +53,7 @@ class MyDataset(object):
 	Here, we simply want to benefit data_augmentation generator from keras
 	Code temporary: TODO
 	"""
-	def __init__(self, paths= ["", ""], batch_size=32, augment=False, seed=1, domain="A", name="No Name"):
+	def __init__(self, paths= ["", ""], batch_size=32, augment=False, seed=1, domain="A", name="No Name", shuffle=True):
 		# super(MyDataset, self).__init__()
 		self.batch_size = batch_size
 		self.paths = paths
@@ -67,6 +67,11 @@ class MyDataset(object):
 		self.X_train, self.Y_train = np.load(paths[0]), np.load(paths[1])
 		print("+ Done.")
 		print("Total datasets samples: {}".format(len(self.Y_train)))
+		if shuffle:
+			print("Shuffling datasets...")
+			self.X_train, self.Y_train = sk_shuffle(self.X_train, self.Y_train)
+			print("+ Done.")
+
 		print("Preprocessing: rescale pixel value to (-1,1)...")
 		self.X_train = self.preprocessing(self.X_train)
 		self.Y_train = self.preprocessing(self.Y_train)
