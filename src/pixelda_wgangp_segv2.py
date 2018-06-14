@@ -23,7 +23,7 @@ if args.gpu == "simple":
 		os.environ["CUDA_VISIBLE_DEVICES"]="0"
 		sys.path.append("/home/lulin/Desktop/Desktop/Python_projets/my_packages")
 	else:
-		os.environ["CUDA_VISIBLE_DEVICES"]="1"
+		os.environ["CUDA_VISIBLE_DEVICES"]="0"
 		sys.path.append("/home/lulin/na4/my_packages")
 
 		import matplotlib as mpl 
@@ -279,7 +279,7 @@ class PixelDA(_DLalgo):
 		
 		self.gp_method = "two_sides" # "two_sides", "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 1#5 #Exp12: 10#10#5 #10 As the paper
-		self.singular_value = 10.0
+		self.singular_value = 2.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -659,13 +659,15 @@ class PixelDA(_DLalgo):
 			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 
 			# Exp51 
-			# Exp53
+			# Exp53, Exp54
 			if (epoch == 1):#2:
 				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 			elif epoch == 2: # 7 #5:
 				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
-			elif epoch == 3:
-				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+			# elif epoch == 3: # commented for Exp55 14/6/2018
+			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+
+
 			# elif epoch == 10:#5:
 			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 
@@ -1229,15 +1231,15 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp23/config.dill")
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp53/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output20_all_5", domain_B_folder="output20_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
 	gan.print_config()
 	
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp52/Exp0.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp53/Exp0.h5')
 	
 	
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
@@ -1245,7 +1247,7 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
 	try:
-		EXP_NAME = "Exp53"
+		EXP_NAME = "Exp55"
 		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
 		gan.train(epochs=300, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
@@ -1257,7 +1259,7 @@ if __name__ == '__main__':
 		raise
 
 
-	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp52"))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp53"))
 
 
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
