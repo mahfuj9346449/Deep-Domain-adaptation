@@ -281,7 +281,7 @@ class PixelDA(_DLalgo):
 		
 		self.gp_method = "two_sides" # "two_sides", "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 10# Exp55: 1
-		self.singular_value = 100 # Exp55: 2.0
+		self.singular_value = 500 # Exp55: 2.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -1236,7 +1236,7 @@ if __name__ == '__main__':
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp55/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output22", domain_B_folder="output20_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
 	gan.print_config()
 	
 	# gan.write_tensorboard_graph()
@@ -1249,10 +1249,10 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
 	try:
-		EXP_NAME = "Exp57"
+		EXP_NAME = "Exp58"
 		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+		gan.train(epochs=10, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)
