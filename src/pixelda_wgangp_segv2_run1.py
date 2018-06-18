@@ -256,17 +256,17 @@ class PixelDA(_DLalgo):
 		self.sf = 64
 
 		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':1e-4, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = False
 		self.normalize_D = True
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 30#30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 10 #30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
-		self.use_He_initialization = False
+		self.use_He_initialization = True
 		self.my_initializer = lambda :he_normal() if self.use_He_initialization else "glorot_uniform" # TODO
 
 		if self.use_PatchGAN:
@@ -1232,11 +1232,11 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
+	gan = PixelDA(noise_size=(128,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp55/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output22", domain_B_folder="output20_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
 	gan.print_config()
 	
 	# gan.write_tensorboard_graph()
@@ -1249,7 +1249,7 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
 	try:
-		EXP_NAME = "Exp57"
+		EXP_NAME = "Exp61"
 		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
 		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
