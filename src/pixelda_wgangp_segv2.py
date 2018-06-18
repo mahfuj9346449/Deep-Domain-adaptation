@@ -99,7 +99,8 @@ except:
 from tqdm import tqdm
 import dill
 from unet.U_net import UNet
-from unet.CT_generator import MyDataset
+# from unet.CT_generator import MyDataset
+from DataGenerators import MyDataset
 from DLalgors import _DLalgo
 import cv2
 from statistic import plot_D_statistic, plot_G_statistic_seg, plot_intensity_stat
@@ -773,7 +774,7 @@ class PixelDA(_DLalgo):
 					# Evaluation (domain B)
 					#-----------------------
 					imgs_B = 0.5*imgs_B + 0.5 # rescale from (-1,1) to (0,1) ### 11/6/2018 NEW TODO IMIM
-					pred_B = self.seg.predict(imgs_B) ### TODO TODO (not compiled yet ???)
+					pred_B = self.seg.predict(imgs_B)
 					_, test_acc = dice_predict(masks_B, pred_B) 
 					# Add accuracy to list of last 100 accuracy measurements
 					test_accs.append(test_acc)
@@ -961,7 +962,7 @@ class PixelDA(_DLalgo):
 			dirpath = "/".join(save_weights_path.split("/")[:-1])
 			if not os.path.exists(dirpath):
 				os.makedirs(dirpath)
-		optimizer = Adam(0.000001, beta_1=0.0, beta_2=0.9)
+		optimizer = Adam(1e-6, beta_1=0.0, beta_2=0.9)
 		
 		# Input noise
 		noise = Input(shape=self.noise_size, name='noise_input_seg')
@@ -970,8 +971,8 @@ class PixelDA(_DLalgo):
 		fake_B = self.generator([img_A, noise])
 
 		# Segment the translated image
-		raise ValueError("Need to modify the following line..")
-		mask_pred = self.seg(fake_B)
+		mask_pred = self.seg(Lambda(lambda x: 0.5*x+0.5)(fake_B))
+
 
 		self.generator.trainable = False
 
@@ -1236,7 +1237,7 @@ if __name__ == '__main__':
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp55/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output22", domain_B_folder="output20_x_128")
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
 	gan.print_config()
 	
 	# gan.write_tensorboard_graph()
@@ -1247,21 +1248,34 @@ if __name__ == '__main__':
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
 
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
-	try:
-		EXP_NAME = "Exp57"
-		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
-		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
-	except KeyboardInterrupt:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-		sys.exit(0)
-	except:
-		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-		raise
+	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
+	# try:
+	# 	EXP_NAME = "Exp57"
+	# 	gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
+	# 	save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
+	# 	gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
 
+	########### Fine-tuning Segmenter with pretrained Generator ##############
+	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path=None)
+	gan.train_segmenter(iterations=100000, batch_size=32, noise_range=3, save_weights_path="../Weights/CT2XperCT/Exp56_seg/Exp0.h5")
+	#############################################################################
 
-	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_bis.txt".format("Exp56"))
+	####### Deploy Segmentation ###########
+	# EXP_NAME = "Exp56"
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format(EXP_NAME))
+	#
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0_bis.h5'.format(EXP_NAME))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_bis.txt".format(EXP_NAME))
+	#######################################################
+
 
 
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")

@@ -99,7 +99,8 @@ except:
 from tqdm import tqdm
 import dill
 from unet.U_net import UNet
-from unet.CT_generator import MyDataset
+# from unet.CT_generator import MyDataset
+from DataGenerators import MyDataset
 from DLalgors import _DLalgo
 import cv2
 from statistic import plot_D_statistic, plot_G_statistic_seg, plot_intensity_stat
