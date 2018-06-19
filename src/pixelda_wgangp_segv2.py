@@ -264,7 +264,7 @@ class PixelDA(_DLalgo):
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 30#30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 10#30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -282,7 +282,7 @@ class PixelDA(_DLalgo):
 		
 		self.gp_method = "two_sides" # "two_sides", "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 10# Exp55: 1
-		self.singular_value = 100 # Exp55: 2.0
+		self.singular_value = 80 #100 # Exp55: 2.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -388,33 +388,35 @@ class PixelDA(_DLalgo):
 
 
 
-	def load_dataset(self, dataset_name="CT", domain_A_folder="output8", domain_B_folder="output5_x_128"):
+	def load_dataset(self, dataset_name="CT", domain_A_folder="output8/train", domain_B_folder="output5_x_128/train", training_mode=True):
 		self.dataset_name = dataset_name
 
 		if self.dataset_name == "MNIST":
 			# Configure MNIST and MNIST-M data loader
 			self.data_loader = DataLoader(img_res=(self.img_rows, self.img_cols))
 		elif self.dataset_name == "CT":
-			bodys_filepath_A = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_A_folder)
-			masks_filepath_A = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_A_folder)
-			self.Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], 
-										batch_size=self.batch_size, 
-										augment=False, 
-										seed=17, 
-										domain="A", 
-										name=domain_A_folder,
-										shuffle=True)
+			if training_mode:
+				bodys_filepath_A = "/home/lulin/na4/src/output/{}/bodys.npy".format(domain_A_folder)
+				masks_filepath_A = "/home/lulin/na4/src/output/{}/liver_masks.npy".format(domain_A_folder)
+				self.Dataset_A = MyDataset(paths=[bodys_filepath_A, masks_filepath_A], 
+											batch_size=self.batch_size, 
+											augment=False, 
+											seed=17, 
+											domain="A", 
+											name=domain_A_folder,
+											shuffle=training_mode)
 
-			bodys_filepath_B = "/home/lulin/na4/src/output/{}/train/bodys.npy".format(domain_B_folder)
-			masks_filepath_B = "/home/lulin/na4/src/output/{}/train/liver_masks.npy".format(domain_B_folder)
+			bodys_filepath_B = "/home/lulin/na4/src/output/{}/bodys.npy".format(domain_B_folder)
+			masks_filepath_B = "/home/lulin/na4/src/output/{}/liver_masks.npy".format(domain_B_folder)
 			self.Dataset_B = MyDataset(paths=[bodys_filepath_B, masks_filepath_B], 
 										batch_size=self.batch_size, 
 										augment=False, 
 										seed=17, 
 										domain="B",
 										name=domain_B_folder,
-										shuffle=True)
-			self.source_name = self.Dataset_A.name
+										shuffle=training_mode)
+			if training_mode:
+				self.source_name = self.Dataset_A.name
 			self.target_name = self.Dataset_B.name
 		else:
 			pass
@@ -609,9 +611,6 @@ class PixelDA(_DLalgo):
 		try:
 			plot_model(self.combined_GS, to_file=os.path.join(save_png2dir, "Combined_model.png"))
 			plot_model(self.combined_D, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
-			plot_model(self.generator, to_file=os.path.join(save_png2dir, "Generator.png"))
-			plot_model(self.discriminator, to_file=os.path.join(save_png2dir, "Critic.png"))
-			plot_model(self.seg, to_file=os.path.join(save_png2dir, "Segmenter.png"))
 		except:
 			pass
 		
@@ -959,13 +958,13 @@ class PixelDA(_DLalgo):
 			with open(os.path.join(save_statistic2dir, "Intensity.csv"), "ab") as file:
 				np.savetxt(file, liver_intensities, delimiter=",")
 
-	def train_segmenter(self, iterations, batch_size=32, noise_range=5, save_weights_path=None):
-		raise ValueError("Not modified yet.")
+	def train_segmenter(self, iterations, batch_size=32, noise_range=1, save_weights_path=None):
+		# raise ValueError("Not modified yet.")
 		if save_weights_path is not None:
 			dirpath = "/".join(save_weights_path.split("/")[:-1])
 			if not os.path.exists(dirpath):
 				os.makedirs(dirpath)
-		optimizer = Adam(1e-6, beta_1=0.0, beta_2=0.9)
+		optimizer = Adam(1e-6, beta_1=0.5, beta_2=0.9)
 		
 		# Input noise
 		noise = Input(shape=self.noise_size, name='noise_input_seg')
@@ -991,16 +990,24 @@ class PixelDA(_DLalgo):
 		for e in range(iterations):
 			noise = (2*np.random.random((batch_size, self.noise_size[0]))-1)*noise_range
 			
-			images_A, _, mask_A = self.data_loader.load_data(domain="A", batch_size=batch_size, return_mask=True)
+			if self.dataset_name == 'MNIST':
+				imgs_A, _, masks_A = self.data_loader.load_data(domain="A", batch_size=batch_size, return_mask=True)
+			elif self.dataset_name == 'CT':
+				imgs_A, masks_A = self.Dataset_A.next()
+				
 
-			s_loss = self.segmentation_model.train_on_batch([images_A, noise], mask_A)
+			s_loss = self.segmentation_model.train_on_batch([imgs_A, noise], masks_A)
 
 
 			if e%100 == 0:
-				images_B, _, mask_B = self.data_loader.load_data(domain="B", batch_size=batch_size, return_mask=True)
+				if self.dataset_name == 'MNIST':
+					imgs_B, _, masks_B = self.data_loader.load_data(domain="B", batch_size=batch_size, return_mask=True)
+				elif self.dataset_name == 'CT':
+					imgs_B, masks_B = self.Dataset_B.next()
 
-				pred_mask_B = self.seg.predict(images_B)
-				_, current_test_dice = dice_predict(mask_B, pred_mask_B)
+				imgs_B = 0.5*imgs_B+0.5
+				pred_mask_B = self.seg.predict(imgs_B)
+				_, current_test_dice = dice_predict(masks_B, pred_mask_B)
 				
 				if len(collections)>=100:
 					collections.pop(0)
@@ -1113,7 +1120,11 @@ class PixelDA(_DLalgo):
 		np.save(save2file, np.stack(collections))
 		print("+ All done.")
 	
-	def deploy_segmentation(self, batch_size=32, save2file=""):
+	def deploy_segmentation(self, batch_size=32, save2file="", save_msk2file=None):
+		if save_msk2file is not None:
+			dirpath = "/".join(save_msk2file.split("/")[:-1])
+			if not os.path.exists(dirpath):
+				os.makedirs(dirpath)
 		print("Predicting ... ")
 		if self.dataset_name == "MNIST":
 			pred_B = self.seg.predict(self.data_loader.mnistm_X, batch_size=batch_size)
@@ -1129,7 +1140,10 @@ class PixelDA(_DLalgo):
 			Moy = dice_mean
 			Std = np.std(dice_all)
 		print("+ Done.")
-			
+		if save_msk2file is not None:
+			print("Saving mask prediction to file: {}".format(save_msk2file))
+			np.save(save_msk2file, pred_B)
+			print("+ Done.")
 		N_samples = len(pred_B)
 		
 
@@ -1236,14 +1250,16 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp55/config.dill")
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp56/config.dill")
 	gan.build_all_model()
-	gan.summary()
-	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
+	# gan.summary()
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=False)
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128_test/test", training_mode=False)
 	gan.print_config()
 	
-	gan.write_tensorboard_graph()
+	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0_bis.h5')
 	
@@ -1253,27 +1269,37 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
-	# try:
-	# 	EXP_NAME = "Exp57"
-	# 	gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
-	# 	save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-	# 	gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
-	# except KeyboardInterrupt:
-	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
-	# 	sys.exit(0)
-	# except:
-	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
-	# 	raise
+	try:
+		EXP_NAME = "Exp63"
+		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
+		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
+		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+	except KeyboardInterrupt:
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+		sys.exit(0)
+	except:
+		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+		raise
 
 	########### Fine-tuning Segmenter with pretrained Generator ##############
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path=None)
-	# gan.train_segmenter(iterations=100000, batch_size=32, noise_range=3, save_weights_path="../Weights/CT2XperCT/Exp56_seg/Exp0.h5")
+	# try:
+	# 	EXP_NAME = "Exp56_seg3"
+	# 	save_weights_path = "../Weights/CT2XperCT/{}/Exp0.h5".format(EXP_NAME)
+	# 	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path=None)
+	# 	gan.train_segmenter(iterations=100000, batch_size=32, noise_range=1, save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.segmentation_model.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.segmentation_model.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
 	#############################################################################
 
 	####### Deploy Segmentation ###########
-	# EXP_NAME = "Exp56"
+	# EXP_NAME = "Exp56_seg2"
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
-	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format(EXP_NAME))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_test.txt".format(EXP_NAME), 
+	# 	save_msk2file="../domain_adapted/CT2XperCT/{}/test/liver_masks_predict.npy".format(EXP_NAME))
 	#
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0_bis.h5'.format(EXP_NAME))
 	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_bis.txt".format(EXP_NAME))
