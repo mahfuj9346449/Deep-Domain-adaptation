@@ -609,6 +609,9 @@ class PixelDA(_DLalgo):
 		try:
 			plot_model(self.combined_GS, to_file=os.path.join(save_png2dir, "Combined_model.png"))
 			plot_model(self.combined_D, to_file=os.path.join(save_png2dir, "Discriminator_model.png"))
+			plot_model(self.generator, to_file=os.path.join(save_png2dir, "Generator.png"))
+			plot_model(self.discriminator, to_file=os.path.join(save_png2dir, "Critic.png"))
+			plot_model(self.seg, to_file=os.path.join(save_png2dir, "Segmenter.png"))
 		except:
 			pass
 		
@@ -1237,10 +1240,10 @@ if __name__ == '__main__':
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp55/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21", domain_B_folder="output20_x_128")
 	gan.print_config()
 	
-	# gan.write_tensorboard_graph()
+	gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0_bis.h5')
 	
@@ -1263,8 +1266,8 @@ if __name__ == '__main__':
 	# 	raise
 
 	########### Fine-tuning Segmenter with pretrained Generator ##############
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path=None)
-	gan.train_segmenter(iterations=100000, batch_size=32, noise_range=3, save_weights_path="../Weights/CT2XperCT/Exp56_seg/Exp0.h5")
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path=None)
+	# gan.train_segmenter(iterations=100000, batch_size=32, noise_range=3, save_weights_path="../Weights/CT2XperCT/Exp56_seg/Exp0.h5")
 	#############################################################################
 
 	####### Deploy Segmentation ###########
