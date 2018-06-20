@@ -775,7 +775,10 @@ class PixelDA(_DLalgo):
 					#-----------------------
 					# Evaluation (domain B)
 					#-----------------------
-					imgs_B = 0.5*imgs_B + 0.5 # rescale from (-1,1) to (0,1) ### 11/6/2018 NEW TODO IMIM
+					if self.dataset_name == "CT":
+						imgs_B = 0.5*imgs_B + 0.5 # rescale from (-1,1) to (0,1) ### 11/6/2018 NEW TODO IMIM
+					elif self.dataset_name == "MNIST":
+						pass
 					pred_B = self.seg.predict(imgs_B)
 					_, test_acc = dice_predict(masks_B, pred_B) 
 					# Add accuracy to list of last 100 accuracy measurements
@@ -973,7 +976,10 @@ class PixelDA(_DLalgo):
 		fake_B = self.generator([img_A, noise])
 
 		# Segment the translated image
-		mask_pred = self.seg(Lambda(lambda x: 0.5*x+0.5)(fake_B))
+		if self.dataset_name == "CT":
+			mask_pred = self.seg(Lambda(lambda x: 0.5*x+0.5)(fake_B))
+		elif self.dataset_name == "MNIST":
+			mask_pred = self.seg(fake_B)
 
 
 		self.generator.trainable = False
@@ -1004,8 +1010,7 @@ class PixelDA(_DLalgo):
 					imgs_B, _, masks_B = self.data_loader.load_data(domain="B", batch_size=batch_size, return_mask=True)
 				elif self.dataset_name == 'CT':
 					imgs_B, masks_B = self.Dataset_B.next()
-
-				imgs_B = 0.5*imgs_B+0.5
+					imgs_B = 0.5*imgs_B+0.5
 				pred_mask_B = self.seg.predict(imgs_B)
 				_, current_test_dice = dice_predict(masks_B, pred_mask_B)
 				

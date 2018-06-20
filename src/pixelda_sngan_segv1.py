@@ -104,6 +104,8 @@ from DataGenerators import MyDataset
 from DLalgors import _DLalgo
 import cv2
 from statistic import plot_D_statistic, plot_G_statistic_seg, plot_intensity_stat
+from collections import defaultdict
+
 def wasserstein_loss(y_true, y_pred):
 	"""Calculates the Wasserstein loss for a sample batch.
 	The Wasserstein loss function is very simple to calculate. In a standard GAN, the discriminator
@@ -226,13 +228,13 @@ class PixelDA(_DLalgo):
 	
 	See issue #4674 keras: https://github.com/keras-team/keras/issues/4674
 	"""
-	def __init__(self, noise_size=(128,), 
+	def __init__(self, noise_size=(100,), 
 		use_PatchGAN=False, 
 		use_Wasserstein=True, 
 		batch_size=64,
 		**kwargs):
 		# Input shape
-		self.dataset_name = "MNIST" #"MNIST" # "CT"
+		self.dataset_name = "CT" #"MNIST" # "CT"
 
 		if self.dataset_name == "MNIST":
 			self.img_shape = (32, 32, 3)
@@ -247,7 +249,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights (initial value)
-		self.lambda_adv = 10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 20#5#10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1 
 		self.loss_weights_adv = K.variable(self.lambda_adv)
 		self.loss_weights_seg = K.variable(self.lambda_seg)
@@ -255,22 +257,16 @@ class PixelDA(_DLalgo):
 		# Number of filters in first layer of discriminator and Segmenter
 		self.df = 64 
 		self.sf = 64
-		self.gf = 256
-		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':5*1e-6, 'beta_1':0.0, 'beta_2':0.9}
 
-		self.normalize_G = True
-		self.normalize_D = False
+		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+
+		self.normalize_G = False
+		self.normalize_D = True # TODO
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		if self.dataset_name == "MNIST":
-			self.residual_blocks = 2 
-		elif self.dataset_name == "CT":
-			self.residual_blocks = 4
-		else:
-			raise
-		
+		self.residual_blocks = 10#30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -282,14 +278,21 @@ class PixelDA(_DLalgo):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5 #Exp22: 1#5 #Exp15: 5 #Exp9: 5 #5 #7 #10
+			self.critic_steps = 1 #Exp22: 1#5 #Exp15: 5 #Exp9: 5 #5 #7 #10
 		else:
 			self.critic_steps = 1
 		
-		self.gp_method = "one_side"
-		self.GRADIENT_PENALTY_WEIGHT = 5#Exp12: 10#10#5 #10 As the paper
-		self.singular_value = 1.0
 
+		### Penalization/Regularization of Jacobian matrix conditioning (aka Singular value)
+		self.gradient_penalize = False
+		self.gp_method = "two_sides" # "two_sides", "one_side"
+		self.GRADIENT_PENALTY_WEIGHT = 10# Exp55: 1
+		self.lipschitz = 80 #100 # Exp55: 2.0
+
+		self.sn_normalize = True # even False, we stil compute/record the Singular value for research purpose
+		self.sn_method = "two_sides"
+		self.sn_interval = 50
+		self.store_x_last = defaultdict(lambda : None)
 		##### Set up the other attributes
 		for key in kwargs:
 			setattr(self, key, kwargs[key])
@@ -329,32 +332,43 @@ class PixelDA(_DLalgo):
 		####################################
 		self.generator.trainable = False
 		fake_B = self.generator([img_A, noise])
-		# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
-		avg_img = RandomWeightedAverage()([img_B, fake_B])
+
+		if self.gradient_penalize:
+			# We also need to generate weighted-averages of real and generated samples, to use for the gradient norm penalty.
+			avg_img = RandomWeightedAverage()([img_B, fake_B])
 		
 
 		real_img_rating = self.discriminator(img_B) 
 		fake_img_rating = self.discriminator(fake_B)
-		avg_img_output = self.discriminator(avg_img)
-
-		# The gradient penalty loss function requires the input averaged samples to get gradients. However,
-		# Keras loss functions can only have two arguments, y_true and y_pred. We get around this by making a partial()
-		# of the function with the averaged samples here.
-		partial_gp_loss = partial(gradient_penalty_loss,
-					  averaged_samples=avg_img,
-					  gradient_penalty_weight=1.0,
-					  singular_value=self.singular_value,
-					  method=self.gp_method)
-		partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
+		if self.gradient_penalize:
+			avg_img_output = self.discriminator(avg_img)
+			# The gradient penalty loss function requires the input averaged samples to get gradients. However,
+			# Keras loss functions can only have two arguments, y_true and y_pred. We get around this by making a partial()
+			# of the function with the averaged samples here.
+			partial_gp_loss = partial(gradient_penalty_loss,
+						  averaged_samples=avg_img,
+						  gradient_penalty_weight=1.0,
+						  singular_value=self.lipschitz,
+						  method=self.gp_method)
+			partial_gp_loss.__name__ = 'gradient_penalty'  # Functions need names or Keras will throw an error
 
 		if self.use_Wasserstein:
-			self.combined_D = Model(inputs=[img_A, noise, img_B],  # img_B, fake_B
-									outputs=[real_img_rating, fake_img_rating, avg_img_output])
+			if self.gradient_penalize:
+				self.combined_D = Model(inputs=[img_A, noise, img_B],  # img_B, fake_B
+										outputs=[real_img_rating, fake_img_rating, avg_img_output])
 
-			self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
-									loss_weights=[1,1, self.GRADIENT_PENALTY_WEIGHT], # multiply gradient penalization loss by self.GRADIENT_PENALTY_WEIGHT
-									optimizer=self.optimizer_D,
-									metrics=[my_critic_acc])
+				self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss, partial_gp_loss],
+										loss_weights=[1,1, self.GRADIENT_PENALTY_WEIGHT], # multiply gradient penalization loss by self.GRADIENT_PENALTY_WEIGHT
+										optimizer=self.optimizer_D,
+										metrics=[my_critic_acc])
+			else:
+				self.combined_D = Model(inputs=[img_A, noise, img_B],  # img_B, fake_B
+										outputs=[real_img_rating, fake_img_rating])
+
+				self.combined_D.compile(loss=[wasserstein_loss, wasserstein_loss],
+										loss_weights=[1,1], 
+										optimizer=self.optimizer_D,
+										metrics=[my_critic_acc])
 		else:
 			self.discriminator.compile(loss='mse',
 				optimizer=optimizer,
@@ -427,25 +441,21 @@ class PixelDA(_DLalgo):
 		else:
 			pass
 		
-
 	def build_generator(self):
 		"""Resnet Generator"""
 
-		def residual_block(layer_input, filters=512, down_filter=False, normalization=self.normalize_G):
+		def residual_block(layer_input, normalization=self.normalize_G):
 			"""Residual block described in paper"""
-			d1 = Conv2D(filters, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(layer_input)
+			d = Conv2D(64, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(layer_input)
 			if normalization:
-				# d = InstanceNormalization()(d)
-				d1 = BatchNormalization(momentum=0.8)(d1) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
-			d1 = Activation('relu')(d1)
-			d2 = Conv2D(filters, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(d1)
+				d = InstanceNormalization()(d)
+				# d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
+			d = Activation('relu')(d)
+			d = Conv2D(64, kernel_size=3, strides=1, padding='same')(d)
 			if normalization:
-				# d = InstanceNormalization()(d)
-				d2 = BatchNormalization(momentum=0.8)(d2) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
-			if down_filter:
-				d = Add()([d1, d2])
-			else:
-				d = Add()([d2, layer_input])
+				d = InstanceNormalization()(d)
+				# d = BatchNormalization(momentum=0.8)(d) # 6/6/2018: use it for CT #  6/5/2018: remove it for MNIST
+			d = Add()([d, layer_input])
 			return d
 
 		# Image input
@@ -453,23 +463,22 @@ class PixelDA(_DLalgo):
 
 		## Noise input
 		noise = Input(shape=self.noise_size, name='noise_input')
-		noise_layer = Dense(self.gf, activation="relu", kernel_initializer=self.my_initializer())(noise)
-		noise_layer = Reshape((1,1,self.gf))(noise_layer)
-		r = Conv2DTranspose(self.gf, kernel_size=1, strides=4, padding='same', kernel_initializer=self.my_initializer())(noise_layer)
-		r = Conv2D(self.gf, kernel_size=3, strides=1, padding='same', kernel_initializer=self.my_initializer())(r)
+		noise_layer = Dense(self.img_rows*self.img_cols, activation="relu", kernel_initializer=self.my_initializer())(noise)
+		noise_layer = Reshape((self.img_rows,self.img_cols, 1))(noise_layer)
+		conditioned_img = keras.layers.concatenate([img, noise_layer])
+		# keras.layers.concatenate
+
+		# l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu')(img)
+		l1 = Conv2D(64, kernel_size=3, padding='same', activation='relu', kernel_initializer=self.my_initializer())(conditioned_img)
 		
-		filters_num = self.gf
-		for _ in range(self.residual_blocks): # self.residual_blocks = 4
-			filters_num = int(filters_num/2)
-			r = UpSampling2D()(r)
-			r = residual_block(r, filters=filters_num, down_filter=True)
-		
-		r = UpSampling2D()(r)
-		r = keras.layers.concatenate([r, img])
-		r = residual_block(r, filters=int(filters_num/2), down_filter=True)
+
+		# Propogate signal through residual blocks
+		r = residual_block(l1)
+		for _ in range(self.residual_blocks - 1):
+			r = residual_block(r)
+
 		output_img = Conv2D(self.channels, kernel_size=3, padding='same', activation='tanh')(r)
 
-		
 		return Model([img, noise], output_img)
 
 
@@ -507,6 +516,109 @@ class PixelDA(_DLalgo):
 		
 		return model
 
+	def initialization_for_SN(self):
+		''' Spectral normalize the Discriminator (only) for now
+
+		run this function after model built !
+
+		'''
+		## TODO: this code is not robust (when layer name changes)
+		print("Initializing variable x of power method for SpectralNormalization...")
+		self.layers_name_sn = []
+
+		for layer in self.combined_D.layers:
+			if layer.name.startswith('conv2d') or layer.name.startswith('dense'):
+				self.layers_name_sn.append(layer.name)
+
+		print("Layers to be SN: {}".format(self.layers_name_sn))
+		for layer_name in self.layers_name_sn:
+			layer = self.combined_D.get_layer(layer_name)
+			input_shape = layer.input_shape
+			if layer_name.startswith('conv2d'):				
+				self.store_x_last[layer_name] = K.random_uniform_variable((1,)+input_shape[1:], 0,1, seed=None, name=layer_name+"_last_x")
+			else:
+				# shape = K.shape(layer.kernel)
+				# rows = shape[0]
+				# cols = shape[1]
+				cols = K.int_shape(layer.kernel)[1]
+				self.store_x_last[layer_name] = K.random_uniform_variable((cols,1), 0, 1, seed=None, name=layer_name+"_last_x")
+		print("+ Done.")
+
+	def _power_method_conv(self, kernel, layer_name, first_time=True):
+		# output_shape = K.shape(x) # for conv2d_transpose output shape (to keep same shape)
+		x_last = self.store_x_last[layer_name]
+		output_shape = x_last.shape
+		if first_time:
+			repeat = 2
+		else:
+			repeat = 1
+		for _ in range(repeat):
+			### compute singular_value 
+			y_t = K.conv2d(x_last, kernel) # tensor
+			y_norm = tf.norm(y_t) # tensor
+			y_t = y_t/y_norm # tensor
+
+			x_last = K.conv2d_transpose(y_t, kernel, output_shape) # tensor
+			x_norm = tf.norm(x_last) # tensor
+			x_last = x_last/x_norm # tensor
+		return x_norm, x_last
+	def _power_method(self, kernel, layer_name, first_time=True):
+		x_last = self.store_x_last[layer_name]
+		output_shape = x_last.shape
+		if first_time:
+			repeat = 2
+		else:
+			repeat = 1
+		for _ in range(repeat):
+			### Compute singular_value
+			y_t = K.dot(kernel, x_last) # tensor
+			y_norm = tf.norm(y_t) # tensor
+			y_t = y_t/y_norm # tensor
+			x_last = K.dot(K.transpose(kernel), y_t) # tensor
+			x_norm = tf.norm(x_last) # tensor
+			x_last = x_last/x_norm # tensor
+		return x_norm, x_last
+
+	def _compute_singular_value(self, kernel, layer_name, first_time=True, use_conv=True):
+		if use_conv and (layer_name.startswith("conv2d")):
+			singular_value, x_last = self._power_method_conv(kernel, layer_name, first_time=first_time)
+			K.set_value(self.store_x_last[layer_name], K.get_value(x_last))
+		else:
+			singular_value, x_last  = self._power_method(kernel, layer_name, first_time=first_time)
+			# singular_value and x_last are both tf tensor
+			K.set_value(self.store_x_last[layer_name], K.get_value(x_last))
+		return singular_value
+	def spectral_normalization(self, normalize=True, first_time=False):
+		record_spectrum = [] # For research purpose
+		for layer_name in self.layers_name_sn:
+			layer = self.model.get_layer(layer_name)
+			kernel = layer.kernel
+			
+			singular_value = self._compute_singular_value(kernel, layer_name, first_time=first_time) ## it's a tensor
+			singular_value = K.get_value(singular_value)
+			
+			record_spectrum.append(singular_value) # For research purpose
+
+			if normalize:
+				
+				if self.sn_method == 'two_sides':
+					K.set_value(kernel, self.lipschitz*K.get_value(kernel)/singular_value)	
+				elif self.sn_method == 'one_side':
+					''' Only SN when the singular value (conditioning) of kernel is too large'''
+					if singular_value<self.lipschitz:
+						continue
+					else:
+						K.set_value(kernel, self.lipschitz*K.get_value(kernel)/singular_value)	
+				# elif: TODO TODO average normalization ~= one_side
+			else:
+				''' For research purpose: record singular value during training '''
+				pass
+		return record_spectrum
+
+
+			
+			
+			# print(K.get_value(gamma))
 	def load_pretrained_weights(self, weights_path="../Weights/all_weights.h5", only_seg=False, only_G=False, only_G_S=False, seg_weights_path=None):
 		print("Loading pretrained weights from path: {} ...".format(weights_path))
 		if only_seg:
@@ -535,16 +647,9 @@ class PixelDA(_DLalgo):
 				print("Loading pretrained weights for Segmenter only (from path: {})".format(seg_weights_path))
 				self.seg.load_weights(seg_weights_path)
 		elif only_G:
-			# global keras_session
 			print("Loading pretrained weights for Generator only...")
 			self.combined_GS.load_weights(weights_path, by_name=True)
 			pretrained_weights = self.generator.get_weights()
-			# print(len(pretrained_weights))
-			# print(pretrained_weights[0])
-			# keras_session.close()
-			#
-			# K.clear_session()
-			# reset_session()
 			print("Clearing session....")
 			del self.loss_weights_adv
 			del self.loss_weights_seg
@@ -553,14 +658,9 @@ class PixelDA(_DLalgo):
 			## Re-initialize variable
 			self.loss_weights_adv = K.variable(self.lambda_adv)
 			self.loss_weights_seg = K.variable(self.lambda_seg)
-			
 			# tf.reset_default_graph()
-			
 			self.build_all_model()
 			self.generator.set_weights(pretrained_weights)
-			# print(self.seg.layers[1].name)
-			# print(self.seg.layers[1].get_weights()[1])
-			# print(self.generator.get_weights()[0])
 		elif only_G_S:
 			print("Loading pretrained weights for Generator and Segmenter only...")
 			self.combined_GS.load_weights(weights_path, by_name=True)
@@ -669,11 +769,22 @@ class PixelDA(_DLalgo):
 			print("="*50)
 			print("New epoch: {}".format(epoch))
 			print("="*50)
-			raise ValueError("Not implemented Error")
-			if epoch == 5:#2:
+			# Exp30, 31
+			# if (epoch%3 == 0) and (epoch<10):#2:
+			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+
+			# Exp51 
+			# Exp53, Exp54
+			if (epoch == 1):#2:
 				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
-			elif epoch == 10:#5:
+			elif epoch == 2: # 7 #5:
 				K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+			# elif epoch == 3: # commented for Exp55 14/6/2018
+			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
+
+
+			# elif epoch == 10:#5:
+			# 	K.set_value(self.loss_weights_adv, K.get_value(self.loss_weights_adv)/2)
 
 			for iteration in range(train_steps):
 				if time_monitor and (iteration%10 ==0) and (iteration>0):
@@ -684,7 +795,12 @@ class PixelDA(_DLalgo):
 				#  Train Discriminator
 				# ---------------------
 				# n_sample = half_batch # imgs_A.shape[0]
-			
+				
+				if (iteration%self.sn_interval == 0) and (iteration>0):
+					spectrum = self.spectral_normalization(normalize=self.sn_normalize, first_time=False) # TODO
+					with open(os.path.join(dirpath, "spectrum.csv"), "ab") as csv_file:
+						np.savetxt(csv_file, np.array(spectrum).reshape(1,-1), delimiter=",")
+
 				for _ in range(self.critic_steps):
 
 					if self.dataset_name == "MNIST":
@@ -708,7 +824,8 @@ class PixelDA(_DLalgo):
 							ones = np.ones((self.batch_size, 1))
 							valid = ones#+0.05*np.random.randn(self.batch_size, 1)
 							fake = -ones#+0.05*np.random.randn(self.batch_size, 1) #- valid #np.ones((half_batch, 1)) # = - valid ? 
-							dummy_y = np.zeros((self.batch_size, 1)) # NEW
+							if self.gradient_penalize:
+								dummy_y = np.zeros((self.batch_size, 1)) # NEW
 						else:
 							valid = np.ones((self.batch_size, 1))
 							fake = np.zeros((self.batch_size, 1))
@@ -721,8 +838,11 @@ class PixelDA(_DLalgo):
 					# d_loss_fake = self.discriminator.train_on_batch(fake_B, fake)
 					# d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 					if self.use_Wasserstein:
-						d_loss = self.combined_D.train_on_batch([imgs_A, noise_prior, imgs_B], [valid, fake, dummy_y])
-						# d_loss = self.discriminator.train_on_batch(D_train_images, D_train_label, dummy_y)
+						if self.gradient_penalize:
+							d_loss = self.combined_D.train_on_batch([imgs_A, noise_prior, imgs_B], [valid, fake, dummy_y])
+						else:
+							d_loss = self.combined_D.train_on_batch([imgs_A, noise_prior, imgs_B], [valid, fake])
+						
 					else:
 						D_train_images = np.vstack([imgs_B, fake_B]) # 6/5/2018 NEW
 						D_train_label = np.vstack([valid, fake]) # 6/5/2018 NEW
@@ -745,10 +865,6 @@ class PixelDA(_DLalgo):
 					pass
 
 
-				# One-hot encoding of labels
-				# labels_A = to_categorical(labels_A, num_classes=self.num_classes)
-
-
 				# The generators want the discriminators to label the translated images as real
 				if self.use_PatchGAN:
 					valid = np.ones((self.batch_size,) + self.disc_patch)
@@ -768,8 +884,6 @@ class PixelDA(_DLalgo):
 				#-----------------------
 
 				
-
-				
 				if iteration % 10 == 0:
 					#-----------------------
 					# Evaluation (domain B)
@@ -785,23 +899,9 @@ class PixelDA(_DLalgo):
 					if len(test_accs) > 10:
 						test_accs.pop(0)
 
-
-					if self.use_Wasserstein:
-						d_real_acc = 100*float(d_loss[4])
-						d_fake_acc = 100*float(d_loss[5])
-						d_train_acc = 100*(float(d_loss[4])+float(d_loss[5]))/2
-					else:
-						d_train_acc = 100*float(d_loss[1])
 					
-					gen_loss = g_loss[1]
-
-					clf_train_acc = 100*float(g_loss[-1])
-					clf_train_loss = g_loss[2]
-
 					current_test_acc = 100*float(test_acc)
 					test_mean_acc = 100*float(np.mean(test_accs))
-
-					
 					g_loss.append(current_test_acc)
 					g_loss.append(test_mean_acc)
 
@@ -810,7 +910,31 @@ class PixelDA(_DLalgo):
 					with open(os.path.join(dirpath, "G_Losses.csv"), "ab") as csv_file:
 						np.savetxt(csv_file, np.array(g_loss).reshape(1,-1), delimiter=",")
 
-					message = "{} : [D - loss: {:.3f}, GP_loss: {:.3f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.3f} (D_loss_fake {:.3f})], [seg - loss: {:.3f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(iteration, d_loss[0], d_loss[3], d_real_acc, d_fake_acc, d_train_acc, g_loss[0], gen_loss, clf_train_loss, clf_train_acc, current_test_acc, test_mean_acc)
+					if self.gradient_penalize:
+						message = "{} : [D - loss: {:.3f}, GP_loss: {:.3f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.3f} (D_loss_fake {:.3f})], [seg - loss: {:.3f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(iteration, 
+															d_loss[0], 
+															d_loss[3], 
+															100*float(d_loss[4]), 
+															100*float(d_loss[5]), 
+															100*(float(d_loss[4])+float(d_loss[5]))/2, 
+															g_loss[0], 
+															g_loss[1], 
+															g_loss[2], 
+															100*float(g_loss[-1]), 
+															current_test_acc, 
+															test_mean_acc)
+					else:
+						message = "{} : [D - loss: {:.3f}, (+) acc: {:.2f}%, (-) acc: {:.2f}%, acc: {:.2f}%], [G - loss: {:.3f} (D_loss_fake {:.3f})], [seg - loss: {:.3f}, acc: {:.2f}%, test_dice: {:.2f}% ({:.2f}%)]".format(iteration, 
+															d_loss[0], 
+															100*float(d_loss[3]), 
+															100*float(d_loss[4]), 
+															100*(float(d_loss[3])+float(d_loss[4]))/2, 
+															g_loss[0], 
+															g_loss[1], 
+															g_loss[2], 
+															100*float(g_loss[-1]), 
+															current_test_acc, 
+															test_mean_acc)
 
 					if test_mean_acc > best_test_cls_acc:
 						second_best_cls_acc = best_test_cls_acc
@@ -1255,37 +1379,74 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(128,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp12/config.dill")
-	# gan.load_config(verbose=True, from_file="../Weights/MNIST_SEG/ExpNew1/config.dill")
-	
+	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp56/config.dill")
 	gan.build_all_model()
 	gan.summary()
-	gan.load_dataset(dataset_name="MNIST")
-	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
+	gan.initialization_for_SN()
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=False)
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128_test/test", training_mode=False)
 	gan.print_config()
 	
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp15_S/Exp0.h5')
-	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp16_S/Exp0.h5', only_seg=True, only_G=True, seg_weights_path=None)
-	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/ExpNew1_1/Exp0.h5', only_seg=True, only_G=False, seg_weights_path=None, only_G_S=False)
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0_bis.h5')
 	
+	
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
+
+	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
+	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
 	try:
-		PROBLEM = "MNIST_SEG" #"CT2XperCT"
-		EXP_NAME = "ExpNew4"
-		gan.reset_history_in_folder(dirpath='../Weights/{}/{}'.format(PROBLEM, EXP_NAME))
-		save_weights_path = '../Weights/{}/{}/Exp0.h5'.format(PROBLEM, EXP_NAME)
-		gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/{}/{}".format(PROBLEM, EXP_NAME), save_weights_path=save_weights_path)
+		EXP_NAME = "Exp63"
+		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
+		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
+		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)
 	except:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
 		raise
-	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format("Exp30"))
 
-	# gan.deploy_segmentation()
+	########### Fine-tuning Segmenter with pretrained Generator ##############
+	# try:
+	# 	EXP_NAME = "Exp56_seg3"
+	# 	save_weights_path = "../Weights/CT2XperCT/{}/Exp0.h5".format(EXP_NAME)
+	# 	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path=None)
+	# 	gan.train_segmenter(iterations=100000, batch_size=32, noise_range=1, save_weights_path=save_weights_path)
+	# except KeyboardInterrupt:
+	# 	gan.segmentation_model.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
+	# 	sys.exit(0)
+	# except:
+	# 	gan.segmentation_model.save_weights(save_weights_path[:-3]+"_unkownerror.h5")
+	# 	raise
+	#############################################################################
+
+	####### Deploy Segmentation ###########
+	# EXP_NAME = "Exp56_seg2"
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_test.txt".format(EXP_NAME), 
+	# 	save_msk2file="../domain_adapted/CT2XperCT/{}/test/liver_masks_predict.npy".format(EXP_NAME))
+	#
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0_bis.h5'.format(EXP_NAME))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_bis.txt".format(EXP_NAME))
+	#######################################################
+
+
+
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output18", domain_B_folder="output16_x_128")
+	# for num in ["25"]:#["12", "13", "14", "15_S"] # Done:["19", "20", "21", "22"]
+	# 	K.clear_session()
+	# 	EXP_NAME = "Exp{}".format(num)
+	# 	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/{}/config.dill".format(EXP_NAME))
+	# 	gan.build_all_model()
+	# 	gan.print_config()
+	# 	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
+	# 	gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format(EXP_NAME))
+
+
 	####### MNIST-M segmentation
 	# gan.load_pretrained_weights(weights_path='../Weights/WGAN_GP/Exp4_14_1/Exp0.h5')
 	# gan.load_pretrained_weights(weights_path='../Weights/MNIST_SEG/Exp1/Exp0.h5')

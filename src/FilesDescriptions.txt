@@ -1,0 +1,8 @@
+
+pixelda_wgangp_segv2.py: (main until 19/6/2018) 
+
+pixelda_wgangp_segv3.py: Change Generator architecture (the one of NVIDIA Progressive GANs)
+
+
+pixelda_wgangp_segv5.py: modified from pixelda_wgangp_segv2.py (add mask at Input level)
+
