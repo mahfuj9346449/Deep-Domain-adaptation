@@ -257,8 +257,8 @@ class PixelDA(_DLalgo):
 		self.df = 64 
 		self.sf = 64
 
-		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_D = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = False
 		self.normalize_D = True
@@ -277,7 +277,7 @@ class PixelDA(_DLalgo):
 			self.disc_patch = (patch, patch, 1)
 
 		if self.use_Wasserstein:
-			self.critic_steps = 5 #Exp22: 1#5 #Exp15: 5 #Exp9: 5 #5 #7 #10
+			self.critic_steps = 1 #Exp22: 1#5 #Exp15: 5 #Exp9: 5 #5 #7 #10
 		else:
 			self.critic_steps = 1
 		
@@ -1257,7 +1257,7 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
+	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=16)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp56/config.dill")
 	gan.build_all_model()
 	# gan.summary()
@@ -1280,7 +1280,7 @@ if __name__ == '__main__':
 		EXP_NAME = "Exp70"
 		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+		gan.train(epochs=80, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)

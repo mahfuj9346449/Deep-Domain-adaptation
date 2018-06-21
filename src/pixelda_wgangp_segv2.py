@@ -256,8 +256,8 @@ class PixelDA(_DLalgo):
 		self.df = 64 
 		self.sf = 64
 
-		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9} #Exp64: {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':5*1e-6, 'beta_1':0.0, 'beta_2':0.9}#Exp64: {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_D = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9} #Exp64: {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}#Exp64: {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = False
 		self.normalize_D = True
@@ -1256,11 +1256,11 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
-	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp56/config.dill")
+	gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp64/config.dill")
 	gan.build_all_model()
 	# gan.summary()
-	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=False)
+	gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=False)
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128_test/test", training_mode=False)
 	gan.print_config()
 	
