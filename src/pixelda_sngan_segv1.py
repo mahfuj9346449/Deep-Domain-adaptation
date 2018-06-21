@@ -3,7 +3,7 @@ import scipy
 import os, sys, glob
 # import keras
 # import tensorflow as tf
-
+ROOT_PATH = os.path.expanduser("~")
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -103,7 +103,7 @@ from unet.U_net import UNet
 from DataGenerators import MyDataset
 from DLalgors import _DLalgo
 import cv2
-from statistic import plot_D_statistic, plot_G_statistic_seg, plot_intensity_stat
+from statistic import plot_D_statistic, plot_D_statistic_SN, plot_G_statistic_seg, plot_intensity_stat, plot_spectra_stat
 from collections import defaultdict
 
 def wasserstein_loss(y_true, y_pred):
@@ -232,9 +232,10 @@ class PixelDA(_DLalgo):
 		use_PatchGAN=False, 
 		use_Wasserstein=True, 
 		batch_size=64,
+		dataset_name="CT",
 		**kwargs):
 		# Input shape
-		self.dataset_name = "CT" #"MNIST" # "CT"
+		self.dataset_name = dataset_name #"MNIST" # "CT"
 
 		if self.dataset_name == "MNIST":
 			self.img_shape = (32, 32, 3)
@@ -258,15 +259,15 @@ class PixelDA(_DLalgo):
 		self.df = 64 
 		self.sf = 64
 
-		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_D = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}#{'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}#{'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = False
 		self.normalize_D = True # TODO
 		self.normalize_S = False
 		
 		# Number of residual blocks in the generator
-		self.residual_blocks = 10#30#Exp18_S 40#Exp14: 30 #Exp11: 25 # Exp9: 30# Exp8: 12 #17 # 6 # NEW TODO 14/5/2018
+		self.residual_blocks = 10
 		self.use_PatchGAN = use_PatchGAN #False
 		self.use_Wasserstein = use_Wasserstein
 		self.use_He_initialization = False
@@ -284,14 +285,15 @@ class PixelDA(_DLalgo):
 		
 
 		### Penalization/Regularization of Jacobian matrix conditioning (aka Singular value)
-		self.gradient_penalize = False
+		self.gradient_penalize = True
 		self.gp_method = "two_sides" # "two_sides", "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 10# Exp55: 1
-		self.lipschitz = 80 #100 # Exp55: 2.0
+		self.lipschitz = 50.#80 #100
 
-		self.sn_normalize = True # even False, we stil compute/record the Singular value for research purpose
+		self.disable_sn = False
+		self.sn_normalize = False # even False, we stil compute/record the Singular value for research purpose
 		self.sn_method = "two_sides"
-		self.sn_interval = 50
+		self.sn_interval = 10
 		self.store_x_last = defaultdict(lambda : None)
 		##### Set up the other attributes
 		for key in kwargs:
@@ -526,13 +528,13 @@ class PixelDA(_DLalgo):
 		print("Initializing variable x of power method for SpectralNormalization...")
 		self.layers_name_sn = []
 
-		for layer in self.combined_D.layers:
+		for layer in self.discriminator.layers:
 			if layer.name.startswith('conv2d') or layer.name.startswith('dense'):
 				self.layers_name_sn.append(layer.name)
 
 		print("Layers to be SN: {}".format(self.layers_name_sn))
 		for layer_name in self.layers_name_sn:
-			layer = self.combined_D.get_layer(layer_name)
+			layer = self.discriminator.get_layer(layer_name)
 			input_shape = layer.input_shape
 			if layer_name.startswith('conv2d'):				
 				self.store_x_last[layer_name] = K.random_uniform_variable((1,)+input_shape[1:], 0,1, seed=None, name=layer_name+"_last_x")
@@ -591,7 +593,7 @@ class PixelDA(_DLalgo):
 	def spectral_normalization(self, normalize=True, first_time=False):
 		record_spectrum = [] # For research purpose
 		for layer_name in self.layers_name_sn:
-			layer = self.model.get_layer(layer_name)
+			layer = self.discriminator.get_layer(layer_name)
 			kernel = layer.kernel
 			
 			singular_value = self._compute_singular_value(kernel, layer_name, first_time=first_time) ## it's a tensor
@@ -700,14 +702,14 @@ class PixelDA(_DLalgo):
 		print("="*50)
 		print("Generator summary:")
 		self.generator.summary()
-		print("="*50)
-		print("Segmenter summary:")
-		self.seg.summary()
+		# print("="*50)
+		# print("Segmenter summary:")
+		# self.seg.summary()
 		
-		if self.use_Wasserstein:
-			print("="*50)
-			print("Discriminator model summary:")
-			self.combined_D.summary()
+		# if self.use_Wasserstein:
+		# 	print("="*50)
+		# 	print("Discriminator model summary:")
+		# 	self.combined_D.summary()
 		print("="*50)
 		print("Combined model summary:")
 		self.combined_GS.summary()
@@ -795,11 +797,19 @@ class PixelDA(_DLalgo):
 				#  Train Discriminator
 				# ---------------------
 				# n_sample = half_batch # imgs_A.shape[0]
-				
-				if (iteration%self.sn_interval == 0) and (iteration>0):
-					spectrum = self.spectral_normalization(normalize=self.sn_normalize, first_time=False) # TODO
-					with open(os.path.join(dirpath, "spectrum.csv"), "ab") as csv_file:
-						np.savetxt(csv_file, np.array(spectrum).reshape(1,-1), delimiter=",")
+				if not self.disable_sn:
+					if (iteration%self.sn_interval == 0) and (iteration>0):
+						spectrum = self.spectral_normalization(normalize=self.sn_normalize, first_time=False) # TODO
+						print("="*15+" Spectra of layers "+"="*15)
+						print(spectrum)
+						print("="*50)
+						with open(os.path.join(dirpath, "spectrum.csv"), "ab") as csv_file:
+							np.savetxt(csv_file, np.array(spectrum).reshape(1,-1), delimiter=",")
+
+						# history_spectrum_filepath = os.path.join(dirpath, "spectrum.csv")
+						# with open(history_spectrum_filepath, "rb") as file:
+						# 	Spectra = np.loadtxt(file, delimiter=',')
+						# plot_spectra_stat(Spectra, show=False, save2dir=dirpath)
 
 				for _ in range(self.critic_steps):
 
@@ -893,8 +903,10 @@ class PixelDA(_DLalgo):
 					elif self.dataset_name == "MNIST":
 						pass
 					pred_B = self.seg.predict(imgs_B)
+
 					_, test_acc = dice_predict(masks_B, pred_B) 
 					# Add accuracy to list of last 100 accuracy measurements
+					print(test_acc)
 					test_accs.append(test_acc)
 					if len(test_accs) > 10:
 						test_accs.pop(0)
@@ -920,7 +932,7 @@ class PixelDA(_DLalgo):
 															g_loss[0], 
 															g_loss[1], 
 															g_loss[2], 
-															100*float(g_loss[-1]), 
+															100*float(g_loss[4]), 
 															current_test_acc, 
 															test_mean_acc)
 					else:
@@ -932,7 +944,7 @@ class PixelDA(_DLalgo):
 															g_loss[0], 
 															g_loss[1], 
 															g_loss[2], 
-															100*float(g_loss[-1]), 
+															100*float(g_loss[4]), 
 															current_test_acc, 
 															test_mean_acc)
 
@@ -978,14 +990,19 @@ class PixelDA(_DLalgo):
 						G_hist = np.loadtxt(file, delimiter=",")
 					with open(history_filepath_D, "rb") as file:
 						D_hist = np.loadtxt(file, delimiter=",")
+
 					plot_G_statistic_seg(G_hist, show=False, save2dir=dirpath), plot_intensity_stat
-					plot_D_statistic(D_hist, show=False, save2dir=dirpath)
+					if self.gradient_penalize:
+						plot_D_statistic(D_hist, show=False, save2dir=dirpath)
+					else:
+						plot_D_statistic_SN(D_hist, show=False, save2dir=dirpath)
 
 					if self.dataset_name == "CT":
 						history_filepath_I = os.path.join(dirpath, "Intensity.csv") 
 						with open(history_filepath_I, "rb") as file:
 							I_hist = np.loadtxt(file, delimiter=",")
 						plot_intensity_stat(I_hist, show=False, save2dir=dirpath)
+					
 					
 		#### NEW 24/5/2018
 		self.combined_GS.save_weights(save_weights_path[:-3]+"_final.h5")
@@ -1378,12 +1395,13 @@ def render_image_by_mask(img, msk, clipping=0.1, return_intensity=True):
 
 
 if __name__ == '__main__':
-	gan = PixelDA(noise_size=(128,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
+	gan = PixelDA(dataset_name="MNIST", noise_size=(128,), use_PatchGAN=False, use_Wasserstein=True, batch_size=64)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp56/config.dill")
 	gan.build_all_model()
 	gan.summary()
 	gan.initialization_for_SN()
-	gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
+	gan.load_dataset(dataset_name="MNIST")
+	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=False)
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128_test/test", training_mode=False)
 	gan.print_config()
@@ -1398,11 +1416,11 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
-	try:
-		EXP_NAME = "Exp63"
-		gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
-		save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-		gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+	try:# CT2XperCT
+		EXP_NAME = "Exp3"
+		gan.reset_history_in_folder(dirpath='../Weights/SN-GAN/{}'.format(EXP_NAME))
+		save_weights_path = '../Weights/SN-GAN/{}/Exp0.h5'.format(EXP_NAME)
+		gan.train(epochs=20, sample_interval=100, save_sample2dir="../samples/SN-GAN/{}".format(EXP_NAME), save_weights_path=save_weights_path)
 	except KeyboardInterrupt:
 		gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 		sys.exit(0)

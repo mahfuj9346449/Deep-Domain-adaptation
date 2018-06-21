@@ -39,7 +39,35 @@ def plot_D_statistic(history, show=False, cut=None, save2dir="../results/"):
 	if show:
 		plt.show()
 	plt.close()
+def plot_D_statistic_SN(history, show=False, cut=None, save2dir="../results/"):
+	if not os.path.exists(save2dir):
+		os.makedirs(save2dir)
+	if cut is not None:
+		history = history[:cut]
+	length = len(history)
+	xaxis_scale = np.arange(0, length*10, 10)
+	plt.figure()
+	plt.title("Critic loss")
+	plt.plot(xaxis_scale, history[:, 0], label="WGAN-GP loss")
+	plt.plot(xaxis_scale, history[:, 1], label="real imgs loss")
+	plt.plot(xaxis_scale, history[:, 2], label="fake imgs loss")
+	plt.xlabel("Iteration")
+	plt.legend(loc="best")
+	plt.savefig(os.path.join(save2dir, "critic_loss.png"))
+	if show:
+		plt.show()
+	plt.close()
 
+	plt.figure()
+	plt.title("Critic accuracy")
+	plt.plot(xaxis_scale, history[:, 3], label="Critic acc (real)")
+	plt.plot(xaxis_scale, history[:, 4], label="Critic acc (fake)")
+	plt.xlabel("Iteration")
+	plt.legend(loc="best")
+	plt.savefig(os.path.join(save2dir, "critic_acc.png"))
+	if show:
+		plt.show()
+	plt.close()
 def plot_G_statistic(history, show=False, save2dir="../results/"):
 	if not os.path.exists(save2dir):
 		os.makedirs(save2dir)
@@ -117,6 +145,25 @@ def plot_intensity_stat(history, show=False, save2dir="../results/"):
 	plt.legend(loc="best")
 	plt.savefig(os.path.join(save2dir, "intensity.png"))
 	plt.close()
+def plot_spectra_stat(history, show=False, save2dir="../results/"):
+	length = len(history)
+	num_layers = history.shape[1]
+	xaxis_scale = np.arange(0, length*10, 10) # 10, TODO
+	plt.figure()
+	plt.title("Singular value of layers")
+	for i in range(num_layers):
+		plt.plot(xaxis_scale, history[:, i], label="Singular value of layer {}".format(i))
+	plt.xlabel("Iteration")
+	plt.legend(loc="best")
+	plt.savefig(os.path.join(save2dir, "spectra.png"))
+	plt.close()
+
+
+
+
+
+
+
 
 def download_image_for_gif(imgs_path="../domain_adapted/WGAN_GP/Exp4/debug_uniform_linear.npy"):
 	from tqdm import tqdm 
@@ -226,18 +273,18 @@ if __name__=="__main__":
 	## Segmentation 
 	#################
 
-	FOLDER_NAME = "Exp7"
-	filepath = "../Weights/CT2XperCT/{}/G_Losses.csv".format(FOLDER_NAME)
-	with open(filepath, "rb") as file:
-		G = np.loadtxt(file, delimiter=",")
-	print(G.shape)
-	plot_G_statistic_seg(G, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+	# FOLDER_NAME = "Exp7"
+	# filepath = "../Weights/CT2XperCT/{}/G_Losses.csv".format(FOLDER_NAME)
+	# with open(filepath, "rb") as file:
+	# 	G = np.loadtxt(file, delimiter=",")
+	# print(G.shape)
+	# plot_G_statistic_seg(G, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
 
 
 
-	filepath = "../Weights/CT2XperCT/{}/D_Losses.csv".format(FOLDER_NAME)
-	with open(filepath, "rb") as file:
-		D = np.loadtxt(file, delimiter=",")
-	print(D.shape)
-	plot_D_statistic(D, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
+	# filepath = "../Weights/CT2XperCT/{}/D_Losses.csv".format(FOLDER_NAME)
+	# with open(filepath, "rb") as file:
+	# 	D = np.loadtxt(file, delimiter=",")
+	# print(D.shape)
+	# plot_D_statistic(D, show=False, save2dir="../results/CT2XperCT/{}".format(FOLDER_NAME))
 	

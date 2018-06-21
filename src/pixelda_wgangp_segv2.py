@@ -247,7 +247,7 @@ class PixelDA(_DLalgo):
 		self.noise_size = noise_size #(100,)
 		self.batch_size = batch_size
 		# Loss weights (initial value)
-		self.lambda_adv = 20#5#10 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
+		self.lambda_adv = 5 #Exp64 20 # Exp11: 5 # Exp9: 5 #10 # Exp1: 20 #17 MNIST-M
 		self.lambda_seg = 1 
 		self.loss_weights_adv = K.variable(self.lambda_adv)
 		self.loss_weights_seg = K.variable(self.lambda_seg)
@@ -256,8 +256,8 @@ class PixelDA(_DLalgo):
 		self.df = 64 
 		self.sf = 64
 
-		self.opt_config_D = {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
-		self.opt_config_G = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_D = {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9} #Exp64: {'lr':5*1e-5, 'beta_1':0.0, 'beta_2':0.9}
+		self.opt_config_G = {'lr':5*1e-6, 'beta_1':0.0, 'beta_2':0.9}#Exp64: {'lr':1e-5, 'beta_1':0.0, 'beta_2':0.9}
 
 		self.normalize_G = False
 		self.normalize_D = True
@@ -282,7 +282,7 @@ class PixelDA(_DLalgo):
 		
 		self.gp_method = "two_sides" # "two_sides", "one_side"
 		self.GRADIENT_PENALTY_WEIGHT = 10# Exp55: 1
-		self.singular_value = 80 #100 # Exp55: 2.0
+		self.singular_value = 80 #120 # Exp64: 80 #100 # Exp55: 2.0
 
 		##### Set up the other attributes
 		for key in kwargs:
@@ -1258,7 +1258,7 @@ if __name__ == '__main__':
 	gan = PixelDA(noise_size=(100,), use_PatchGAN=False, use_Wasserstein=True, batch_size=32)#32
 	# gan.load_config(verbose=True, from_file="../Weights/CT2XperCT/Exp56/config.dill")
 	gan.build_all_model()
-	gan.summary()
+	# gan.summary()
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=True)
 	gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128/train", training_mode=False)
 	# gan.load_dataset(dataset_name="CT", domain_A_folder="output21/train", domain_B_folder="output20_x_128_test/test", training_mode=False)
@@ -1266,7 +1266,7 @@ if __name__ == '__main__':
 	
 	# gan.write_tensorboard_graph()
 	##### gan.save_config(verbose=True, save2path="../Weights/WGAN_GP/Exp4_7/config.dill")
-	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0_bis.h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp64/Exp0.h5')	
 	
 	
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp12/Exp0.h5', only_seg=False, only_G=False, seg_weights_path=None, only_G_S=True)
@@ -1274,11 +1274,14 @@ if __name__ == '__main__':
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp23/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	#(SOTA) gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp56/Exp0.h5', only_seg=False, only_G=False, only_G_S=True, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')
 	# gan.load_pretrained_weights(weights_path=None, only_seg=True, only_G=False, seg_weights_path='../Weights/Pretrained_Unet/output8/Exp2.h5')	
+
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp64/Exp0 (copy).h5')
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/Exp64/Exp0.h5')
 	# try:
-	# 	EXP_NAME = "Exp64"
+	# 	EXP_NAME = "Exp64_2"
 	# 	gan.reset_history_in_folder(dirpath='../Weights/CT2XperCT/{}'.format(EXP_NAME))
 	# 	save_weights_path = '../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME)
-	# 	gan.train(epochs=20, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
+	# 	gan.train(epochs=150, sample_interval=50, save_sample2dir="../samples/CT2XperCT/{}".format(EXP_NAME), save_weights_path=save_weights_path)
 	# except KeyboardInterrupt:
 	# 	gan.combined_GS.save_weights(save_weights_path[:-3]+"_keyboardinterrupt.h5")
 	# 	sys.exit(0)
@@ -1301,10 +1304,10 @@ if __name__ == '__main__':
 	#############################################################################
 
 	####### Deploy Segmentation ###########
-	EXP_NAME = "Exp64"
-	gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
-	gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format(EXP_NAME), 
-		save_msk2file="../domain_adapted/CT2XperCT/{}/liver_masks_predict.npy".format(EXP_NAME))
+	# EXP_NAME = "Exp64_2"
+	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0.h5'.format(EXP_NAME))
+	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results.txt".format(EXP_NAME), 
+	# 	save_msk2file="../domain_adapted/CT2XperCT/{}/liver_masks_predict.npy".format(EXP_NAME))
 	#
 	# gan.load_pretrained_weights(weights_path='../Weights/CT2XperCT/{}/Exp0_bis.h5'.format(EXP_NAME))
 	# gan.deploy_segmentation(save2file="../Weights/CT2XperCT/{}/results_bis.txt".format(EXP_NAME))

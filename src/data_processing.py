@@ -97,11 +97,13 @@ class DataLoader():
 		if return_mask:
 			if domain == "A":
 				masks = (images+1)/2
+				masks = np.round(masks) # New 21/6/2018
 				masks = masks[:,:,:,0][:,:,:,np.newaxis]
 				return images, labels, masks
 			elif domain == "B":
 				### Here we use the fact that MNIST-M has the same semantic segmentation form as MNIST
 				masks = (self.mnist_X[idx]+1)/2 # shape = (batch_size, 32, 32, 3)
+				masks = np.round(masks) # New 21/6/2018
 				masks = masks[:,:,:,0][:,:,:,np.newaxis] # shape = (batch_size, 32, 32, 1)
 				return images, labels, masks
 
